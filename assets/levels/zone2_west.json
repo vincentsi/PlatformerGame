@@ -1,0 +1,45 @@
+{
+  "name": "Zone 2 - Ouest",
+  "levelId": "zone2_west",
+  "zoneNumber": 2,
+  "isBossLevel": false,
+  "nextZone": "",
+  "nextLevels": ["zone2_hub"],
+  "startPosition": [100, 350],
+
+  "platforms": [
+    { "x": 0, "y": 550, "width": 700, "height": 50 },
+    { "x": 800, "y": 500, "width": 200, "height": 20 },
+    { "x": 1100, "y": 450, "width": 200, "height": 20 },
+    { "x": 1400, "y": 400, "width": 300, "height": 30 },
+    { "x": 1800, "y": 350, "width": 200, "height": 20 },
+    { "x": 2100, "y": 300, "width": 150, "height": 20 },
+    { "x": 2350, "y": 250, "width": 200, "height": 20 },
+    { "x": 2650, "y": 200, "width": 150, "height": 20 },
+    { "x": 2900, "y": 150, "width": 300, "height": 30 },
+    { "x": 3300, "y": 200, "width": 200, "height": 20 },
+    { "x": 3600, "y": 250, "width": 300, "height": 30 }
+  ],
+
+  "checkpoints": [
+    { "x": 1500, "y": 350, "id": "cp_zone2_west_mid" },
+    { "x": 3000, "y": 100, "id": "cp_zone2_west_high" }
+  ],
+
+  "interactiveObjects": [
+    { "x": 1900, "y": 300, "width": 40, "height": 40, "type": "terminal", "id": "term_west_1" },
+    { "x": 3400, "y": 200, "width": 60, "height": 100, "type": "door", "id": "door_west_1" }
+  ],
+
+  "cameraZones": [
+    { "minX": 0, "maxX": 4000, "minY": -100, "maxY": 700 }
+  ],
+
+  "goalZone": {
+    "x": 3700,
+    "y": 200,
+    "width": 80,
+    "height": 80
+  }
+}
+

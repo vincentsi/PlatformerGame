@@ -22,6 +22,7 @@ set(SOURCES
     src/world/Camera.cpp
     src/world/GoalZone.cpp
     src/world/Checkpoint.cpp
+    src/world/InteractiveObject.cpp
     src/world/LevelLoader.cpp
     src/physics/CollisionSystem.cpp
     src/ui/GameUI.cpp
@@ -32,6 +33,7 @@ set(SOURCES
     src/ui/KeyBindingMenu.cpp
     src/core/SaveSystem.cpp
     src/core/InputConfig.cpp
+    src/core/Logger.cpp
     src/effects/ParticleSystem.cpp
     src/effects/CameraShake.cpp
     src/effects/ScreenTransition.cpp
@@ -44,6 +46,7 @@ set(HEADERS
     include/core/Config.h
     include/core/GameState.h
     include/core/SaveSystem.h
+    include/core/Logger.h
     include/entities/Entity.h
     include/entities/Player.h
     include/entities/Enemy.h
@@ -54,6 +57,7 @@ set(HEADERS
     include/world/Camera.h
     include/world/GoalZone.h
     include/world/Checkpoint.h
+    include/world/InteractiveObject.h
     include/world/LevelLoader.h
     include/physics/CollisionSystem.h
     include/physics/PhysicsConstants.h

@@ -1,0 +1,24 @@
+{
+  "name": "Salle d'Éveil - Couloir",
+  "levelId": "zone1_level2",
+  "zoneNumber": 1,
+  "isBossLevel": false,
+  "nextZone": "",
+  "nextLevels": ["zone1_level3"],
+  "startPosition": [100, 520],
+
+  "platforms": [{ "x": 0, "y": 550, "width": 1200, "height": 50 }],
+
+  "checkpoints": [{ "x": 100, "y": 500, "id": "cp_corridor_start" }],
+
+  "interactiveObjects": [],
+
+  "cameraZones": [{ "minX": 0, "maxX": 1200, "minY": 0, "maxY": 600 }],
+
+  "goalZone": {
+    "x": 1100,
+    "y": 500,
+    "width": 80,
+    "height": 80
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "name": "Salle d'Éveil - Partie 3",
+  "levelId": "zone1_level3",
+  "zoneNumber": 1,
+  "isBossLevel": false,
+  "nextZone": "",
+  "nextLevels": ["zone1_boss"],
+  "startPosition": [100, 400],
+
+  "platforms": [
+    { "x": 0, "y": 550, "width": 600, "height": 50 },
+    { "x": 700, "y": 500, "width": 150, "height": 20 },
+    { "x": 900, "y": 450, "width": 150, "height": 20 },
+    { "x": 1100, "y": 400, "width": 200, "height": 20 },
+    { "x": 1400, "y": 350, "width": 150, "height": 20 },
+    { "x": 1650, "y": 300, "width": 150, "height": 20 },
+    { "x": 1900, "y": 250, "width": 200, "height": 20 },
+    { "x": 2200, "y": 200, "width": 150, "height": 20 },
+    { "x": 2450, "y": 150, "width": 200, "height": 20 },
+    { "x": 2750, "y": 100, "width": 300, "height": 30 },
+    { "x": 3150, "y": 150, "width": 200, "height": 20 },
+    { "x": 3450, "y": 200, "width": 150, "height": 20 },
+    { "x": 3700, "y": 250, "width": 200, "height": 20 },
+    { "x": 4000, "y": 300, "width": 400, "height": 50 }
+  ],
+
+  "checkpoints": [
+    { "x": 1500, "y": 300, "id": "cp_level3_mid" },
+    { "x": 2900, "y": 50, "id": "cp_level3_high" }
+  ],
+
+  "interactiveObjects": [
+    {
+      "x": 2000,
+      "y": 200,
+      "width": 40,
+      "height": 40,
+      "type": "terminal",
+      "id": "term_4"
+    },
+    {
+      "x": 3600,
+      "y": 200,
+      "width": 60,
+      "height": 100,
+      "type": "door",
+      "id": "door_2"
+    }
+  ],
+
+  "cameraZones": [{ "minX": 0, "maxX": 4500, "minY": -100, "maxY": 700 }],
+
+  "goalZone": {
+    "x": 4100,
+    "y": 250,
+    "width": 80,
+    "height": 80
+  }
+}

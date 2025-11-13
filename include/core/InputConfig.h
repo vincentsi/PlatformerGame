@@ -7,6 +7,7 @@ struct InputBindings {
     sf::Keyboard::Key moveLeft;
     sf::Keyboard::Key moveRight;
     sf::Keyboard::Key jump;
+    sf::Keyboard::Key ability;  // Special ability key
     sf::Keyboard::Key menuUp;
     sf::Keyboard::Key menuDown;
     sf::Keyboard::Key menuSelect;
@@ -16,6 +17,7 @@ struct InputBindings {
         : moveLeft(sf::Keyboard::A)
         , moveRight(sf::Keyboard::D)
         , jump(sf::Keyboard::Space)
+        , ability(sf::Keyboard::LShift)  // Default: Left Shift
         , menuUp(sf::Keyboard::W)
         , menuDown(sf::Keyboard::S)
         , menuSelect(sf::Keyboard::Enter)

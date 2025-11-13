@@ -1,6 +1,7 @@
 #include "core/Game.h"
 #include "core/Config.h"
 #include "core/InputConfig.h"
+#include "core/Logger.h"
 #include "physics/CollisionSystem.h"
 #include <iostream>
 #include <cstring>
@@ -17,11 +18,15 @@ Game::Game()
     , victoryEffectsTriggered(false)
     , isTransitioning(false)
     , currentLevelNumber(1)
+    , secretRoomUnlocked(false)
     , fpsUpdateTime(0.0f)
     , frameCount(0)
     , activeCheckpointId("")
 {
     window.setFramerateLimit(Config::FRAMERATE_LIMIT);
+
+    // Initialize logger
+    Logger::init("game.log");
 
     // Create polish systems
     particleSystem = std::make_unique<ParticleSystem>();
@@ -98,6 +103,8 @@ Game::Game()
 }
 
 Game::~Game() {
+    // Shutdown logger
+    Logger::shutdown();
 }
 
 void Game::run() {
@@ -105,7 +112,7 @@ void Game::run() {
         float dt = clock.restart().asSeconds();
 
         // Cap delta time to avoid spiral of death
-        if (dt > 0.1f) dt = 0.1f;
+        if (dt > Config::MAX_DELTA_TIME) dt = Config::MAX_DELTA_TIME;
 
         processEvents();
         update(dt);
@@ -208,6 +215,17 @@ void Game::handleInput() {
         player->jump();
     }
 
+    // Special ability (one-shot activation on key press)
+    static bool abilityKeyPressed = false;
+    if (sf::Keyboard::isKeyPressed(bindings.ability)) {
+        if (!abilityKeyPressed && player->canUseAbility()) {
+            player->useAbility();
+            abilityKeyPressed = true;
+        }
+    } else {
+        abilityKeyPressed = false;
+    }
+
     // Horizontal movement
     if (sf::Keyboard::isKeyPressed(bindings.moveLeft) || sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) {
         player->moveLeft();
@@ -250,6 +268,8 @@ void Game::update(float dt) {
             loadLevel(nextLevelPath);
             nextLevelPath = "";
             screenTransition->startFadeIn(0.5f);
+            levelCompleted = false;  // Reset for new level
+            victoryEffectsTriggered = false;
         }
 
         // When fade in completes, resume gameplay
@@ -275,14 +295,16 @@ void Game::update(float dt) {
     bool grounded = false;
 
     for (auto& platform : platforms) {
+        sf::FloatRect platformBounds = platform->getBounds();
         if (CollisionSystem::resolveCollision(
             playerBounds,
             playerVel,
-            platform->getBounds(),
+            platformBounds,
             grounded
         )) {
             player->setPosition(playerBounds.left, playerBounds.top);
             player->setVelocity(playerVel);
+            
         }
     }
 
@@ -340,6 +362,86 @@ void Game::update(float dt) {
         }
     }
 
+    // Update interactive objects
+    for (auto& interactive : interactiveObjects) {
+        if (interactive) {
+            interactive->update(dt);
+        }
+    }
+
+    // Handle Noah's Hack ability (interact with terminals, doors, etc.)
+    if (player && player->isHacking() && player->getCharacterType() == CharacterType::Noah) {
+        for (auto& interactive : interactiveObjects) {
+            if (!interactive) continue;
+            
+            // Check if player is in range
+            if (interactive->isPlayerInRange(player->getBounds())) {
+                // Activate the interactive object
+                if (!interactive->isActivated()) {
+                    interactive->activate();
+                    
+                    // Visual feedback
+                    sf::Vector2f objPos = interactive->getPosition();
+                    particleSystem->emitVictory(sf::Vector2f(objPos.x + interactive->getSize().x / 2.0f, objPos.y + interactive->getSize().y / 2.0f));
+                    audioManager->playSound("checkpoint", 70.0f);
+                    cameraShake->shakeLight();
+                    
+                    // Handle different types of interactive objects
+                    if (interactive->getType() == InteractiveType::Door) {
+                        // Door: Make platform passable or remove it
+                        // For now, just mark as activated (can be used to unlock doors later)
+                        std::cout << "Door " << interactive->getId() << " hacked!\n";
+                    } else if (interactive->getType() == InteractiveType::Terminal) {
+                        // Terminal: Activate systems, unlock paths
+                        std::cout << "Terminal " << interactive->getId() << " hacked!\n";
+                    } else if (interactive->getType() == InteractiveType::Turret) {
+                        // Turret: Disable turret
+                        std::cout << "Turret " << interactive->getId() << " disabled!\n";
+                    }
+                }
+            }
+        }
+    }
+
+    // Handle Lyra's Kinetic Wave ability (push enemies away once when activated)
+    if (player && player->hasKineticWaveJustActivated() && player->getCharacterType() == CharacterType::Lyra) {
+        sf::Vector2f playerPos = player->getPosition();
+        sf::Vector2f waveDir = player->getKineticWaveDirection();
+        float waveRange = Config::KINETIC_WAVE_RANGE;
+        
+        for (auto& enemy : enemies) {
+            if (!enemy || !enemy->isAlive()) {
+                continue;
+            }
+            
+            sf::Vector2f enemyPos = enemy->getPosition();
+            sf::Vector2f toEnemy = enemyPos - playerPos;
+            float distance = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
+            
+                // Check if enemy is in range and in front of player
+                if (distance <= waveRange && distance > 0.0f) {
+                    // Normalize direction
+                    sf::Vector2f dirToEnemy = sf::Vector2f(toEnemy.x / distance, toEnemy.y / distance);
+                    
+                    // Check if enemy is in the direction of the wave (forward-facing)
+                    float dot = dirToEnemy.x * waveDir.x;
+                    if (dot > Config::KINETIC_WAVE_DOT_THRESHOLD) {  // Enemy is in front (with some tolerance)
+                    // Push enemy away with force
+                    sf::Vector2f pushForce = dirToEnemy * Config::KINETIC_WAVE_FORCE;
+                    enemy->setVelocity(pushForce.x, pushForce.y);
+                    
+                    // Visual effect
+                    particleSystem->emitJump(enemyPos);
+                    audioManager->playSound("jump", 60.0f);
+                    cameraShake->shakeLight();
+                }
+            }
+        }
+        
+        // Clear activation flag after processing
+        player->clearKineticWaveActivation();
+    }
+
     // Update enemies
     for (auto& enemy : enemies) {
         if (!enemy || !enemy->isAlive()) {
@@ -350,7 +452,7 @@ void Game::update(float dt) {
 
         // Check collision with player
         if (player && player->getBounds().intersects(enemy->getBounds())) {
-            sf::FloatRect playerBounds = player->getBounds();
+            sf::FloatRect currentPlayerBounds = player->getBounds();
             sf::FloatRect enemyBounds = enemy->getBounds();
 
             // Spikes (Stationary enemies) cannot be stomped - they always deal damage
@@ -367,22 +469,35 @@ void Game::update(float dt) {
                 }
             } else {
                 // For other enemies: Check if player is stomping on enemy (falling and hitting from above)
-                float tolerance = 10.0f * player->getStompDamageMultiplier();  // Noah has bigger stomp range
+                float tolerance = Config::STOMP_TOLERANCE_BASE * player->getStompDamageMultiplier();  // Noah has bigger stomp range
                 bool playerFalling = player->getVelocity().y > 0;
-                bool hitFromAbove = playerBounds.top + playerBounds.height <= enemyBounds.top + tolerance;
+                bool hitFromAbove = currentPlayerBounds.top + currentPlayerBounds.height <= enemyBounds.top + tolerance;
 
                 if (playerFalling && hitFromAbove) {
-                    // Kill enemy
-                    enemy->kill();
+                    // Zone 1 Level 2: Flying enemy allows bounce without killing (for secret)
+                    if (currentLevel && currentLevel->levelId == "zone1_level2" && enemy->getType() == EnemyType::Flying) {
+                        // Don't kill flying enemy, just bounce (allows multiple uses for secret)
+                        // Bounce player up higher for secret access
+                        player->setVelocity(player->getVelocity().x, Config::FLYING_ENEMY_BOUNCE_VELOCITY);
+                        
+                        // Effects
+                        sf::Vector2f enemyPos = enemy->getPosition();
+                        particleSystem->emitJump(sf::Vector2f(enemyPos.x + 15.0f, enemyPos.y + 15.0f));
+                        audioManager->playSound("jump", 80.0f);
+                        cameraShake->shakeLight();
+                    } else {
+                        // Kill enemy (normal behavior)
+                        enemy->kill();
 
-                    // Bounce player up
-                    player->setVelocity(player->getVelocity().x, -300.0f);
+                        // Bounce player up
+                        player->setVelocity(player->getVelocity().x, Config::ENEMY_BOUNCE_VELOCITY);
 
-                    // Effects
-                    sf::Vector2f enemyPos = enemy->getPosition();
-                    particleSystem->emitDeath(sf::Vector2f(enemyPos.x + 15.0f, enemyPos.y + 15.0f));
-                    audioManager->playSound("death", 80.0f);
-                    cameraShake->shakeLight();
+                        // Effects
+                        sf::Vector2f enemyPos = enemy->getPosition();
+                        particleSystem->emitDeath(sf::Vector2f(enemyPos.x + 15.0f, enemyPos.y + 15.0f));
+                        audioManager->playSound("death", 80.0f);
+                        cameraShake->shakeLight();
+                    }
                 } else {
                     // Side or bottom collision = player takes damage
                     // Only play effects if player is not invincible (takeDamage will handle invincibility check)
@@ -422,11 +537,47 @@ void Game::update(float dt) {
         if (!levelCompleted && goalZone->isPlayerInside(player->getBounds())) {
             levelCompleted = true;
 
-            // Start transition to next level
-            currentLevelNumber++;
-            nextLevelPath = "assets/levels/level" + std::to_string(currentLevelNumber) + ".json";
-            isTransitioning = true;
-            screenTransition->startFadeOut(0.5f);
+            // Determine next level based on zone system
+            if (currentLevel && currentLevel->isBossLevel) {
+                // Boss completed: transition to next zone
+                if (!currentLevel->nextZone.empty()) {
+                    // For now, transition to zone 2 hub (will be implemented as level select)
+                    // TODO: Implement zone 2 level selection menu
+                    std::cout << "Boss defeated! Zone " << currentLevel->zoneNumber << " complete!\n";
+                    std::cout << "Next zone: " << currentLevel->nextZone << "\n";
+                    // For now, load first level of next zone
+                    nextLevelPath = "assets/levels/" + currentLevel->nextZone + "_hub.json";
+                } else {
+                    // No next zone: game complete
+                    std::cout << "Game complete! No next zone defined.\n";
+                    // TODO: Show ending screen
+                    return;
+                }
+            } else if (currentLevel && !currentLevel->nextLevels.empty()) {
+                // Multiple next levels available (non-linear): show level select
+                std::string nextLevelId = currentLevel->nextLevels[0];
+                std::cout << "Next level ID: " << nextLevelId << "\n";
+                nextLevelPath = "assets/levels/" + nextLevelId + ".json";
+                std::cout << "Loading next level: " << nextLevelPath << "\n";
+                
+                if (currentLevel->nextLevels.size() > 1) {
+                    // Multiple paths: TODO - implement level select menu
+                    std::cout << "Multiple paths available: ";
+                    for (const auto& levelId : currentLevel->nextLevels) {
+                        std::cout << levelId << " ";
+                    }
+                    std::cout << "\n";
+                }
+            } else {
+                // Linear progression: increment level number (legacy support)
+                currentLevelNumber++;
+                nextLevelPath = "assets/levels/level" + std::to_string(currentLevelNumber) + ".json";
+            }
+
+            if (!nextLevelPath.empty()) {
+                isTransitioning = true;
+                screenTransition->startFadeOut(0.5f);
+            }
         }
     }
 
@@ -465,6 +616,9 @@ void Game::render() {
             camera->apply(window);
             for (auto& platform : platforms) platform->draw(window);
             for (auto& checkpoint : checkpoints) checkpoint->draw(window);
+            for (auto& interactive : interactiveObjects) {
+                if (interactive) interactive->draw(window);
+            }
             if (goalZone) goalZone->draw(window);
             for (auto& enemy : enemies) {
                 if (enemy && enemy->isAlive()) {
@@ -504,6 +658,13 @@ void Game::render() {
         // Draw checkpoints
         for (auto& checkpoint : checkpoints) {
             checkpoint->draw(window);
+        }
+
+        // Draw interactive objects
+        for (auto& interactive : interactiveObjects) {
+            if (interactive) {
+                interactive->draw(window);
+            }
         }
 
         // Draw goal zone
@@ -547,60 +708,40 @@ void Game::render() {
 }
 
 void Game::loadLevel() {
-    // Try to load level from file
-    currentLevel = LevelLoader::loadFromFile("assets/levels/level1.json");
-
-    if (currentLevel) {
-        // Move data from LevelData to Game
-        platforms = std::move(currentLevel->platforms);
-        checkpoints = std::move(currentLevel->checkpoints);
-        goalZone = std::move(currentLevel->goalZone);
-
-        // Clear and create enemies (for now, add test enemies)
-        enemies.clear();
-        // Patrol enemy
-        enemies.push_back(std::make_unique<PatrolEnemy>(200.0f, 520.0f, 80.0f));
-
-        // Spike (stationary hazard)
-        enemies.push_back(std::make_unique<Spike>(400.0f, 540.0f));
-        enemies.push_back(std::make_unique<Spike>(440.0f, 540.0f));
-
-        // Flying enemy (vertical patrol)
-        enemies.push_back(std::make_unique<FlyingEnemy>(600.0f, 400.0f, 120.0f));
-
-        std::cout << "Level loaded: " << currentLevel->name << "\n";
-    }
+    // Load first level of Zone 1 (Salle d'Éveil)
+    loadLevel("assets/levels/zone1_level1.json");
 }
 
 void Game::loadLevel(const std::string& levelPath) {
     // Load level from specified path
     currentLevel = LevelLoader::loadFromFile(levelPath);
 
-    if (currentLevel) {
-        // Move data from LevelData to Game
-        platforms = std::move(currentLevel->platforms);
-        checkpoints = std::move(currentLevel->checkpoints);
-        goalZone = std::move(currentLevel->goalZone);
+        if (currentLevel) {
+            // Move data from LevelData to Game
+            platforms = std::move(currentLevel->platforms);
+            checkpoints = std::move(currentLevel->checkpoints);
+            interactiveObjects = std::move(currentLevel->interactiveObjects);
+            goalZone = std::move(currentLevel->goalZone);
 
-        // Clear and create enemies (for now, add test enemies)
+        // Clear enemies and add level-specific enemies
         enemies.clear();
-        // Patrol enemy
-        enemies.push_back(std::make_unique<PatrolEnemy>(200.0f, 520.0f, 80.0f));
+        
+        // Zone 1 Level 2: Couloir - Premier monstre volant
+        if (currentLevel->levelId == "zone1_level2") {
+            // Flying enemy horizontal (de gauche à droite) au-dessus de la plateforme
+            // Position: au-dessus de la plateforme à y=400, patrouille horizontalement
+            enemies.push_back(std::make_unique<FlyingEnemy>(600.0f, 400.0f, 800.0f, true));
+        }
 
-        // Spike (stationary hazard)
-        enemies.push_back(std::make_unique<Spike>(400.0f, 540.0f));
-        enemies.push_back(std::make_unique<Spike>(440.0f, 540.0f));
-
-        // Flying enemy (vertical patrol)
-        enemies.push_back(std::make_unique<FlyingEnemy>(600.0f, 400.0f, 120.0f));
-
-        // Reset all players to level start position
-        sf::Vector2f startPos = currentLevel->startPosition;
-        for (auto& p : players) {
-            if (p) {
-                p->setPosition(startPos.x, startPos.y);
-                p->setSpawnPoint(startPos.x, startPos.y);
-                p->setVelocity(sf::Vector2f(0.0f, 0.0f));
+        // Reset all players to level start position (only if players already exist)
+        if (!players.empty()) {
+            sf::Vector2f startPos = currentLevel->startPosition;
+            for (auto& p : players) {
+                if (p) {
+                    p->setPosition(startPos.x, startPos.y);
+                    p->setSpawnPoint(startPos.x, startPos.y);
+                    p->setVelocity(sf::Vector2f(0.0f, 0.0f));
+                }
             }
         }
 
@@ -608,21 +749,27 @@ void Game::loadLevel(const std::string& levelPath) {
         levelCompleted = false;
         victoryEffectsTriggered = false;
         activeCheckpointId = "";
+        secretRoomUnlocked = false;
 
-        // Update camera limits
-        if (!currentLevel->cameraZones.empty()) {
+        // Update camera limits (only if camera exists)
+        if (camera && !currentLevel->cameraZones.empty()) {
             const auto& zone = currentLevel->cameraZones[0];
             camera->setLimits(zone.minX, zone.maxX, zone.minY, zone.maxY);
         }
 
         // Reset camera to active player position immediately (use update with 0 dt for instant snap)
-        Player* activePlayer = getActivePlayer();
-        if (activePlayer) {
-            camera->update(activePlayer->getPosition(), 0.0f);
+        // Only if camera and player exist
+        if (camera) {
+            Player* activePlayer = getActivePlayer();
+            if (activePlayer) {
+                camera->update(activePlayer->getPosition(), 0.0f);
+            }
         }
 
-        // Reset UI
-        gameUI->hideVictoryMessage();
+        // Reset UI (only if UI exists)
+        if (gameUI) {
+            gameUI->hideVictoryMessage();
+        }
 
         std::cout << "Level loaded: " << currentLevel->name << "\n";
     }
@@ -686,13 +833,34 @@ void Game::continueGame() {
     if (SaveSystem::load(saveData)) {
         currentLevelNumber = saveData.currentLevel;
 
-        // Load saved level
-        std::string levelPath = "assets/levels/level" + std::to_string(currentLevelNumber) + ".json";
+        // Convert old save format (level number) to new format (level ID)
+        // If currentLevelNumber <= 3, it's Zone 1
+        std::string levelPath;
+        if (currentLevelNumber == 1) {
+            levelPath = "assets/levels/zone1_level1.json";
+        } else if (currentLevelNumber == 2) {
+            levelPath = "assets/levels/zone1_level2.json";
+        } else if (currentLevelNumber == 3) {
+            levelPath = "assets/levels/zone1_level3.json";
+        } else if (currentLevelNumber == 4) {
+            levelPath = "assets/levels/zone1_boss.json";
+        } else {
+            // Level number > 4: try legacy format (for future zones not yet converted)
+            levelPath = "assets/levels/level" + std::to_string(currentLevelNumber) + ".json";
+        }
+        
         currentLevel = LevelLoader::loadFromFile(levelPath);
+        
+        // If loading failed, create default level
+        if (!currentLevel || currentLevel->platforms.empty()) {
+            std::cout << "Error: Could not load level " << currentLevelNumber << ". Creating default level.\n";
+            currentLevel = LevelLoader::createDefaultLevel();
+        }
 
         if (currentLevel) {
             platforms = std::move(currentLevel->platforms);
             checkpoints = std::move(currentLevel->checkpoints);
+            interactiveObjects = std::move(currentLevel->interactiveObjects);
             goalZone = std::move(currentLevel->goalZone);
 
             // Determine spawn position: checkpoint if available, otherwise level start
@@ -788,8 +956,11 @@ void Game::returnToTitleScreen() {
         sf::Vector2f spawnPos = player->getSpawnPoint();
         saveData.checkpointX = spawnPos.x;
         saveData.checkpointY = spawnPos.y;
-        std::strncpy(saveData.activeCheckpointId, activeCheckpointId.c_str(), 63);
-        saveData.activeCheckpointId[63] = '\0';
+        // Copy checkpoint ID safely
+        size_t len = activeCheckpointId.length();
+        if (len > 63) len = 63;
+        std::memcpy(saveData.activeCheckpointId, activeCheckpointId.c_str(), len);
+        saveData.activeCheckpointId[len] = '\0';
     }
 
     SaveSystem::save(saveData);
@@ -798,6 +969,7 @@ void Game::returnToTitleScreen() {
     players.clear();
     platforms.clear();
     checkpoints.clear();
+    interactiveObjects.clear();
     goalZone.reset();
     camera.reset();
     gameUI.reset();

@@ -12,6 +12,7 @@
 #include "world/Camera.h"
 #include "world/GoalZone.h"
 #include "world/Checkpoint.h"
+#include "world/InteractiveObject.h"
 #include "world/LevelLoader.h"
 #include "ui/GameUI.h"
 #include "effects/ParticleSystem.h"
@@ -59,6 +60,7 @@ private:
     int activePlayerIndex;
     std::vector<std::unique_ptr<Platform>> platforms;
     std::vector<std::unique_ptr<Checkpoint>> checkpoints;
+    std::vector<std::unique_ptr<InteractiveObject>> interactiveObjects;
     std::vector<std::unique_ptr<Enemy>> enemies;
     std::unique_ptr<Camera> camera;
     std::unique_ptr<GameUI> gameUI;
@@ -86,6 +88,7 @@ private:
     bool isTransitioning;
     std::string nextLevelPath;
     int currentLevelNumber;
+    bool secretRoomUnlocked;
 
     // Menus
     std::unique_ptr<TitleScreen> titleScreen;

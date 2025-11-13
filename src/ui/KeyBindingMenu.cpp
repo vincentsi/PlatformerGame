@@ -11,6 +11,7 @@ KeyBindingMenu::KeyBindingMenu()
         {"Move Left", "moveLeft"},
         {"Move Right", "moveRight"},
         {"Jump", "jump"},
+        {"Special Ability", "ability"},
         {"Menu Up", "menuUp"},
         {"Menu Down", "menuDown"},
         {"Menu Select", "menuSelect"}

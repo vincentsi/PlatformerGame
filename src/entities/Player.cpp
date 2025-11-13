@@ -23,6 +23,17 @@ Player::Player(float x, float y, CharacterType type)
     , justJumped(false)
     , justLanded(false)
     , wasGrounded(false)
+    , abilityCooldown(0.0f)
+    , abilityCooldownRemaining(0.0f)
+    , kineticWaveActive(false)
+    , kineticWaveJustActivated(false)
+    , kineticWaveTimer(0.0f)
+    , kineticWaveDirection(0.0f, 0.0f)
+    , hacking(false)
+    , hackTimer(0.0f)
+    , berserkActive(false)
+    , berserkTimer(0.0f)
+    , berserkHealAccumulator(0.0f)
 {
     shape.setSize(sf::Vector2f(size.x, size.y));
 
@@ -70,6 +81,55 @@ void Player::update(float dt) {
     // Update timers
     updateCoyoteTime(dt);
     updateJumpBuffer(dt);
+    updateAbilityCooldown(dt);
+    
+    // Update active abilities
+    if (kineticWaveActive) {
+        // Note: kineticWaveJustActivated is reset in Game.cpp after processing
+        kineticWaveTimer -= dt;
+        if (kineticWaveTimer <= 0.0f) {
+            kineticWaveActive = false;
+            kineticWaveJustActivated = false;  // Reset when effect ends
+        }
+    }
+    
+    if (hacking) {
+        hackTimer -= dt;
+        if (hackTimer <= 0.0f) {
+            hacking = false;
+        }
+    }
+    
+    if (berserkActive) {
+        berserkTimer -= dt;
+        
+        // Heal over time during berserk
+        berserkHealAccumulator += Config::BERSERK_HEAL_RATE * dt;
+        if (berserkHealAccumulator >= 1.0f) {
+            int healAmount = static_cast<int>(berserkHealAccumulator);
+            heal(healAmount);
+            berserkHealAccumulator -= static_cast<float>(healAmount);
+        }
+        
+        // Visual feedback - pulse effect
+        float pulse = std::sin(berserkTimer * 10.0f) * 0.5f + 0.5f;
+        sf::Color currentColor = shape.getFillColor();
+        if (characterType == CharacterType::Sera) {
+            shape.setFillColor(sf::Color(255, static_cast<sf::Uint8>(100 + pulse * 100), 255));
+        }
+        
+        if (berserkTimer <= 0.0f) {
+            berserkActive = false;
+            // Restore normal color
+            switch (characterType) {
+                case CharacterType::Sera:
+                    shape.setFillColor(sf::Color::Magenta);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
 
     // Apply velocity to position
     position.x += velocity.x * dt;
@@ -293,16 +353,28 @@ int Player::getMaxJumps() const {
 }
 
 float Player::getMoveSpeed() const {
+    float baseSpeed;
     switch (characterType) {
         case CharacterType::Lyra:
-            return Config::MOVE_SPEED;  // Lyra = normal speed (300)
+            baseSpeed = Config::MOVE_SPEED;  // Lyra = normal speed (300)
+            break;
         case CharacterType::Noah:
-            return Config::MOVE_SPEED * 0.75f;  // Noah = slower (225)
+            baseSpeed = Config::MOVE_SPEED * 0.75f;  // Noah = slower (225)
+            break;
         case CharacterType::Sera:
-            return Config::MOVE_SPEED * 1.15f;  // Sera = faster (345)
+            baseSpeed = Config::MOVE_SPEED * 1.15f;  // Sera = faster (345)
+            break;
         default:
-            return Config::MOVE_SPEED;
+            baseSpeed = Config::MOVE_SPEED;
+            break;
     }
+    
+    // Apply berserk speed boost
+    if (berserkActive && characterType == CharacterType::Sera) {
+        baseSpeed *= Config::BERSERK_SPEED_BOOST;
+    }
+    
+    return baseSpeed;
 }
 
 float Player::getStompDamageMultiplier() const {
@@ -314,4 +386,98 @@ float Player::getStompDamageMultiplier() const {
         default:
             return 1.0f;  // Normal stomp
     }
+}
+
+// Special abilities implementation
+void Player::useAbility() {
+    if (!canUseAbility()) {
+        return;
+    }
+    
+    switch (characterType) {
+        case CharacterType::Lyra:
+            useKineticWave();
+            break;
+        case CharacterType::Noah:
+            useHack();
+            break;
+        case CharacterType::Sera:
+            useBerserk();
+            break;
+        default:
+            break;
+    }
+}
+
+bool Player::canUseAbility() const {
+    return abilityCooldownRemaining <= 0.0f && !dead;
+}
+
+float Player::getAbilityCooldown() const {
+    switch (characterType) {
+        case CharacterType::Lyra:
+            return Config::KINETIC_WAVE_COOLDOWN;
+        case CharacterType::Noah:
+            return Config::HACK_COOLDOWN;
+        case CharacterType::Sera:
+            return Config::BERSERK_COOLDOWN;
+        default:
+            return 0.0f;
+    }
+}
+
+float Player::getAbilityCooldownRemaining() const {
+    return abilityCooldownRemaining;
+}
+
+void Player::updateAbilityCooldown(float dt) {
+    if (abilityCooldownRemaining > 0.0f) {
+        abilityCooldownRemaining -= dt;
+        if (abilityCooldownRemaining < 0.0f) {
+            abilityCooldownRemaining = 0.0f;
+        }
+    }
+}
+
+// Lyra - Kinetic Wave
+void Player::useKineticWave() {
+    // Determine direction based on player facing
+    float directionX = (velocity.x > 0.0f) ? 1.0f : (velocity.x < 0.0f) ? -1.0f : 1.0f;
+    kineticWaveDirection = sf::Vector2f(directionX, 0.0f);
+    
+    kineticWaveActive = true;
+    kineticWaveJustActivated = true;  // Mark as just activated
+    kineticWaveTimer = 0.2f;  // Visual effect duration
+    
+    // Set cooldown
+    abilityCooldown = Config::KINETIC_WAVE_COOLDOWN;
+    abilityCooldownRemaining = abilityCooldown;
+}
+
+// Noah - Hack
+void Player::useHack() {
+    hacking = true;
+    hackTimer = 0.5f;  // Hack animation duration
+    
+    // Set cooldown
+    abilityCooldown = Config::HACK_COOLDOWN;
+    abilityCooldownRemaining = abilityCooldown;
+    
+    // Note: Actual hack effect (disabling systems, opening doors) 
+    // will be handled in Game.cpp by checking isHacking()
+}
+
+// Sera - Berserk Mode
+void Player::useBerserk() {
+    if (berserkActive) {
+        return;  // Already in berserk mode
+    }
+    
+    berserkActive = true;
+    berserkTimer = Config::BERSERK_DURATION;
+    berserkHealAccumulator = 0.0f;
+    
+    // Set cooldown
+    abilityCooldown = Config::BERSERK_COOLDOWN;
+    abilityCooldownRemaining = abilityCooldown;
 }

@@ -4,7 +4,7 @@
 
 class FlyingEnemy : public Enemy {
 public:
-    FlyingEnemy(float x, float y, float patrolDistance = 150.0f);
+    FlyingEnemy(float x, float y, float patrolDistance = 150.0f, bool horizontalPatrol = false);
 
     void update(float dt) override;
 
@@ -16,10 +16,13 @@ public:
 private:
     enum class Direction {
         Up,
-        Down
+        Down,
+        Left,
+        Right
     };
 
     Direction direction;
+    bool isHorizontal;  // true = horizontal patrol, false = vertical patrol
 
     // Vertical patrol boundaries
     float patrolTopBound;

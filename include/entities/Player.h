@@ -54,10 +54,30 @@ public:
     float getMoveSpeed() const;
     float getStompDamageMultiplier() const;
 
+    // Special abilities
+    void useAbility();
+    bool canUseAbility() const;
+    float getAbilityCooldown() const;
+    float getAbilityCooldownRemaining() const;
+    
+    // Ability states
+    bool isBerserkMode() const { return berserkActive; }
+    bool isHacking() const { return hacking; }
+    sf::Vector2f getKineticWaveDirection() const { return kineticWaveDirection; }
+    bool hasKineticWaveActive() const { return kineticWaveActive; }
+    bool hasKineticWaveJustActivated() const { return kineticWaveJustActivated; }
+    void clearKineticWaveActivation() { kineticWaveJustActivated = false; }
+
 private:
     void applyGravity(float dt);
     void updateCoyoteTime(float dt);
     void updateJumpBuffer(float dt);
+    void updateAbilityCooldown(float dt);
+    
+    // Special ability implementations
+    void useKineticWave();      // Lyra
+    void useHack();              // Noah
+    void useBerserk();           // Sera
 
 private:
     sf::RectangleShape shape;
@@ -90,4 +110,23 @@ private:
     bool justJumped;
     bool justLanded;
     bool wasGrounded;
+
+    // Special abilities
+    float abilityCooldown;
+    float abilityCooldownRemaining;
+    
+    // Lyra - Kinetic Wave
+    bool kineticWaveActive;
+    bool kineticWaveJustActivated;  // True for one frame when activated
+    float kineticWaveTimer;
+    sf::Vector2f kineticWaveDirection;
+    
+    // Noah - Hack
+    bool hacking;
+    float hackTimer;
+    
+    // Sera - Berserk Mode
+    bool berserkActive;
+    float berserkTimer;
+    float berserkHealAccumulator;
 };

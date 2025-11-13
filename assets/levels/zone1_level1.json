@@ -1,0 +1,29 @@
+{
+  "name": "Salle d'Éveil - Laboratoire",
+  "levelId": "zone1_level1",
+  "zoneNumber": 1,
+  "isBossLevel": false,
+  "nextZone": "",
+  "nextLevels": ["zone1_level2"],
+  "startPosition": [100, 520],
+
+  "platforms": [
+    { "x": 0, "y": 550, "width": 800, "height": 50 },
+    { "x": -50, "y": 0, "width": 50, "height": 600 },
+    { "x": 800, "y": 0, "width": 50, "height": 600 },
+    { "x": 0, "y": 0, "width": 200, "height": 100 }
+  ],
+
+  "checkpoints": [{ "x": 100, "y": 500, "id": "cp_lab_start" }],
+
+  "interactiveObjects": [],
+
+  "cameraZones": [{ "minX": 0, "maxX": 800, "minY": 0, "maxY": 600 }],
+
+  "goalZone": {
+    "x": 750,
+    "y": 500,
+    "width": 50,
+    "height": 50
+  }
+}

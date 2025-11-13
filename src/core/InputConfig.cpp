@@ -12,6 +12,7 @@ void InputConfig::setBinding(const std::string& action, sf::Keyboard::Key key) {
     if (action == "moveLeft") bindings.moveLeft = key;
     else if (action == "moveRight") bindings.moveRight = key;
     else if (action == "jump") bindings.jump = key;
+    else if (action == "ability") bindings.ability = key;
     else if (action == "menuUp") bindings.menuUp = key;
     else if (action == "menuDown") bindings.menuDown = key;
     else if (action == "menuSelect") bindings.menuSelect = key;
@@ -22,6 +23,7 @@ sf::Keyboard::Key InputConfig::getBinding(const std::string& action) const {
     if (action == "moveLeft") return bindings.moveLeft;
     else if (action == "moveRight") return bindings.moveRight;
     else if (action == "jump") return bindings.jump;
+    else if (action == "ability") return bindings.ability;
     else if (action == "menuUp") return bindings.menuUp;
     else if (action == "menuDown") return bindings.menuDown;
     else if (action == "menuSelect") return bindings.menuSelect;
@@ -99,6 +101,7 @@ bool InputConfig::saveToFile(const std::string& filename) {
     file << static_cast<int>(bindings.moveLeft) << "\n";
     file << static_cast<int>(bindings.moveRight) << "\n";
     file << static_cast<int>(bindings.jump) << "\n";
+    file << static_cast<int>(bindings.ability) << "\n";
     file << static_cast<int>(bindings.menuUp) << "\n";
     file << static_cast<int>(bindings.menuDown) << "\n";
     file << static_cast<int>(bindings.menuSelect) << "\n";
@@ -148,6 +151,13 @@ bool InputConfig::loadFromFile(const std::string& filename) {
     } else {
         valid = false;
         std::cout << "Warning: Invalid jump key in config file, using default\n";
+    }
+
+    if (file >> key && isValidKey(key)) {
+        bindings.ability = static_cast<sf::Keyboard::Key>(key);
+    } else {
+        valid = false;
+        std::cout << "Warning: Invalid ability key in config file, using default\n";
     }
 
     if (file >> key && isValidKey(key)) {

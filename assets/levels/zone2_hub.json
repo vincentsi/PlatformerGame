@@ -1,0 +1,64 @@
+{
+  "name": "Zone 2 - Hub Central",
+  "levelId": "zone2_hub",
+  "zoneNumber": 2,
+  "isBossLevel": false,
+  "nextZone": "",
+  "nextLevels": ["zone2_north", "zone2_south", "zone2_east", "zone2_west"],
+  "startPosition": [400, 400],
+
+  "platforms": [
+    { "x": 0, "y": 550, "width": 1200, "height": 50 },
+    { "x": 200, "y": 400, "width": 150, "height": 20 },
+    { "x": 400, "y": 350, "width": 200, "height": 30 },
+    { "x": 650, "y": 300, "width": 150, "height": 20 },
+    { "x": 850, "y": 250, "width": 200, "height": 30 },
+    { "x": 1100, "y": 200, "width": 150, "height": 20 }
+  ],
+
+  "checkpoints": [{ "x": 450, "y": 300, "id": "cp_zone2_hub" }],
+
+  "interactiveObjects": [
+    {
+      "x": 300,
+      "y": 350,
+      "width": 40,
+      "height": 40,
+      "type": "terminal",
+      "id": "hub_term_north"
+    },
+    {
+      "x": 500,
+      "y": 300,
+      "width": 40,
+      "height": 40,
+      "type": "terminal",
+      "id": "hub_term_south"
+    },
+    {
+      "x": 700,
+      "y": 200,
+      "width": 40,
+      "height": 40,
+      "type": "terminal",
+      "id": "hub_term_east"
+    },
+    {
+      "x": 900,
+      "y": 200,
+      "width": 40,
+      "height": 40,
+      "type": "terminal",
+      "id": "hub_term_west"
+    }
+  ],
+
+  "cameraZones": [{ "minX": 0, "maxX": 1300, "minY": -100, "maxY": 700 }],
+
+  "goalZone": {
+    "x": 1150,
+    "y": 150,
+    "width": 80,
+    "height": 80
+  }
+}
