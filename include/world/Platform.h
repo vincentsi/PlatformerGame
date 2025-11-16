@@ -12,6 +12,7 @@ public:
     sf::FloatRect getBounds() const;
     sf::Vector2f getPosition() const { return position; }
     sf::Vector2f getSize() const { return size; }
+    void setPosition(float x, float y);
 
     // Initialize tileset (call once before creating platforms)
     static void initTileset();

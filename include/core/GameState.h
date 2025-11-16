@@ -6,5 +6,6 @@ enum class GameState {
     Paused,
     Settings,
     Controls,
-    Transitioning
+    Transitioning,
+    Editor
 };

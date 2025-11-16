@@ -67,3 +67,10 @@ void Platform::draw(sf::RenderWindow& window) {
 sf::FloatRect Platform::getBounds() const {
     return sf::FloatRect(position.x, position.y, size.x, size.y);
 }
+
+void Platform::setPosition(float x, float y) {
+    position.x = x;
+    position.y = y;
+    shape.setPosition(position);
+    sprite.setPosition(position);
+}

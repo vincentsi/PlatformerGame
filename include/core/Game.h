@@ -126,4 +126,18 @@ private:
     // Per-frame input / ability state that used to be static locals in update()
     bool doorKeyHeld = false;
     float lastAbilityTimer = 0.0f;
+
+    // Editor mode
+    int selectedPlatformIndex = -1;
+    bool isDraggingPlatform = false;
+    sf::Vector2f dragOffset;
+    sf::Font editorFont;
+    sf::Text editorText;
+    sf::Text saveMessageText;
+    float saveMessageTimer = 0.0f;
+    void handleEditorInput();
+    void updateEditor(float dt);
+    void renderEditor();
+    void saveLevelToFile();
+    sf::Vector2f screenToWorld(const sf::Vector2f& screenPos);
 };

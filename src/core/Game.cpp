@@ -28,12 +28,21 @@
 #include "audio/AudioManager.h"
 #include "graphics/SpriteManager.h"
 #include "physics/CollisionSystem.h"
+#include <fstream>
+#include <sstream>
+#if __has_include(<nlohmann/json.hpp>)
+    #include <nlohmann/json.hpp>
+    #define GAME_HAS_JSON 1
+#else
+    #define GAME_HAS_JSON 0
+#endif
 #include <iostream>
 #include <cstring>
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
 #include <cstdint>
+#include <filesystem>
 
 Game::Game()
     : window(sf::VideoMode(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT), Config::WINDOW_TITLE)
@@ -138,6 +147,15 @@ Game::Game()
             fpsText.setFillColor(sf::Color::White);
             fpsText.setPosition(10.0f, 10.0f);
         }
+
+        if (!editorFont.loadFromFile("assets/fonts/arial.ttf")) {
+            std::cout << "Warning: Could not load font for editor\n";
+        } else {
+            saveMessageText.setFont(editorFont);
+            saveMessageText.setCharacterSize(24);
+            saveMessageText.setFillColor(sf::Color::Green);
+            saveMessageText.setPosition(Config::WINDOW_WIDTH / 2.0f - 150.0f, Config::WINDOW_HEIGHT / 2.0f - 20.0f);
+        }
     }
 }
 
@@ -196,6 +214,86 @@ void Game::processEvents() {
             // Character switch with TAB key (only during gameplay)
             if (event.key.code == sf::Keyboard::Tab && gameState == GameState::Playing) {
                 switchCharacter();
+            }
+
+            // Toggle editor mode with F1
+            if (event.key.code == sf::Keyboard::F1) {
+                if (gameState == GameState::Playing || gameState == GameState::Editor) {
+                    setState(gameState == GameState::Editor ? GameState::Playing : GameState::Editor);
+                }
+            }
+        }
+
+        // Editor mode mouse handling
+        if (gameState == GameState::Editor) {
+            if (event.type == sf::Event::MouseButtonPressed) {
+                sf::Vector2i mousePixelPos = sf::Mouse::getPosition(window);
+                sf::Vector2f worldPos = screenToWorld(sf::Vector2f(static_cast<float>(mousePixelPos.x), static_cast<float>(mousePixelPos.y)));
+
+                if (event.mouseButton.button == sf::Mouse::Left) {
+                    // Check if clicking on existing platform
+                    bool clickedPlatform = false;
+                    for (size_t i = 0; i < platforms.size(); ++i) {
+                        sf::FloatRect bounds = platforms[i]->getBounds();
+                        if (bounds.contains(worldPos)) {
+                            selectedPlatformIndex = static_cast<int>(i);
+                            isDraggingPlatform = true;
+                            dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
+                            clickedPlatform = true;
+                            break;
+                        }
+                    }
+                    // If not clicking on platform, create new one
+                    if (!clickedPlatform) {
+                        platforms.push_back(std::make_unique<Platform>(worldPos.x, worldPos.y, 100.0f, 20.0f));
+                        selectedPlatformIndex = static_cast<int>(platforms.size() - 1);
+                        isDraggingPlatform = true;
+                        dragOffset = sf::Vector2f(0, 0);
+                    }
+                } else if (event.mouseButton.button == sf::Mouse::Right) {
+                    // Delete platform under cursor
+                    for (size_t i = 0; i < platforms.size(); ++i) {
+                        sf::FloatRect bounds = platforms[i]->getBounds();
+                        if (bounds.contains(worldPos)) {
+                            platforms.erase(platforms.begin() + i);
+                            if (selectedPlatformIndex == static_cast<int>(i)) {
+                                selectedPlatformIndex = -1;
+                            } else if (selectedPlatformIndex > static_cast<int>(i)) {
+                                selectedPlatformIndex--;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (event.type == sf::Event::MouseButtonReleased) {
+                if (event.mouseButton.button == sf::Mouse::Left) {
+                    isDraggingPlatform = false;
+                }
+            }
+
+            // Save with Ctrl+S
+            if (event.type == sf::Event::KeyPressed && 
+                event.key.code == sf::Keyboard::S && 
+                sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)) {
+                saveLevelToFile();
+            }
+
+            // Delete selected platform with Delete key
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Delete) {
+                if (selectedPlatformIndex >= 0 && selectedPlatformIndex < static_cast<int>(platforms.size())) {
+                    platforms.erase(platforms.begin() + selectedPlatformIndex);
+                    selectedPlatformIndex = -1;
+                }
+            }
+            // Reload level from file (F5)
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::F5) {
+                if (!currentLevelPath.empty()) {
+                    loadLevel(currentLevelPath);
+                    selectedPlatformIndex = -1;
+                    isDraggingPlatform = false;
+                }
             }
         }
 
@@ -301,6 +399,9 @@ void Game::update(float dt) {
         return;
     } else if (gameState == GameState::Controls && keyBindingMenu) {
         keyBindingMenu->update(dt);
+        return;
+    } else if (gameState == GameState::Editor) {
+        updateEditor(dt);
         return;
     }
 
@@ -787,6 +888,10 @@ void Game::render() {
         return;
     } else if (gameState == GameState::Controls && keyBindingMenu) {
         keyBindingMenu->draw(window);
+        window.display();
+        return;
+    } else if (gameState == GameState::Editor) {
+        renderEditor();
         window.display();
         return;
     }
@@ -1331,4 +1436,370 @@ void Game::setState(GameState newState) {
 
         std::cout << "Game state changed to: " << static_cast<int>(gameState) << "\n";
     }
+}
+
+sf::Vector2f Game::screenToWorld(const sf::Vector2f& screenPos) {
+    if (!camera) return screenPos;
+    
+    sf::View view = window.getView();
+    sf::Vector2f worldPos = window.mapPixelToCoords(sf::Vector2i(static_cast<int>(screenPos.x), static_cast<int>(screenPos.y)), view);
+    return worldPos;
+}
+
+void Game::updateEditor(float dt) {
+    if (!camera) return;
+
+    // Update save message timer
+    if (saveMessageTimer > 0.0f) {
+        saveMessageTimer -= dt;
+    }
+
+    Player* player = getActivePlayer();
+    if (player) {
+        camera->update(player->getPosition(), dt);
+    }
+
+    // Handle dragging
+    if (isDraggingPlatform && selectedPlatformIndex >= 0 && selectedPlatformIndex < static_cast<int>(platforms.size())) {
+        sf::Vector2i mousePixelPos = sf::Mouse::getPosition(window);
+        sf::Vector2f worldPos = screenToWorld(sf::Vector2f(static_cast<float>(mousePixelPos.x), static_cast<float>(mousePixelPos.y)));
+        
+        sf::FloatRect bounds = platforms[selectedPlatformIndex]->getBounds();
+        platforms[selectedPlatformIndex]->setPosition(worldPos.x - dragOffset.x, worldPos.y - dragOffset.y);
+    }
+
+    // Camera movement with arrow keys (move player to move camera)
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) {
+        if (player) {
+            player->setPosition(player->getPosition().x - 500.0f * dt, player->getPosition().y);
+        }
+    }
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)) {
+        if (player) {
+            player->setPosition(player->getPosition().x + 500.0f * dt, player->getPosition().y);
+        }
+    }
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)) {
+        if (player) {
+            player->setPosition(player->getPosition().x, player->getPosition().y - 500.0f * dt);
+        }
+    }
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down)) {
+        if (player) {
+            player->setPosition(player->getPosition().x, player->getPosition().y + 500.0f * dt);
+        }
+    }
+}
+
+void Game::renderEditor() {
+    if (!camera) return;
+
+    Player* player = getActivePlayer();
+    if (player) {
+        camera->apply(window);
+    }
+
+    drawParallaxBackground(window);
+
+    // Draw platforms
+    for (size_t i = 0; i < platforms.size(); ++i) {
+        platforms[i]->draw(window);
+        
+        // Highlight selected platform
+        if (static_cast<int>(i) == selectedPlatformIndex) {
+            sf::FloatRect bounds = platforms[i]->getBounds();
+            sf::RectangleShape outline;
+            outline.setSize(sf::Vector2f(bounds.width, bounds.height));
+            outline.setPosition(bounds.left, bounds.top);
+            outline.setFillColor(sf::Color::Transparent);
+            outline.setOutlineColor(sf::Color::Yellow);
+            outline.setOutlineThickness(2.0f);
+            window.draw(outline);
+        }
+
+        // Draw platform index
+        if (editorFont.getInfo().family != "") {
+            sf::Text indexText;
+            indexText.setFont(editorFont);
+            indexText.setString(std::to_string(i));
+            indexText.setCharacterSize(12);
+            indexText.setFillColor(sf::Color::White);
+            sf::FloatRect bounds = platforms[i]->getBounds();
+            indexText.setPosition(bounds.left + bounds.width / 2.0f - 10.0f, bounds.top - 15.0f);
+            window.draw(indexText);
+        }
+    }
+
+    // Draw checkpoints
+    for (auto& checkpoint : checkpoints) {
+        checkpoint->draw(window);
+    }
+
+    // Draw goal zone
+    if (goalZone) {
+        goalZone->draw(window);
+    }
+
+    window.setView(window.getDefaultView());
+
+    // Draw editor UI
+    if (editorFont.getInfo().family != "") {
+        editorText.setFont(editorFont);
+        editorText.setCharacterSize(16);
+        editorText.setFillColor(sf::Color::White);
+        editorText.setPosition(10.0f, 10.0f);
+        
+        std::string info = "MODE EDITEUR\n";
+        info += "F1: Toggle Editor\n";
+        info += "Clic Gauche: Placer/Selectionner plateforme\n";
+        info += "Clic Droit: Supprimer plateforme\n";
+        info += "Delete: Supprimer selectionnee\n";
+        info += "Ctrl+S: Sauvegarder et recharger\n";
+        info += "F5: Recharger depuis fichier\n";
+        info += "Fleches: Deplacer camera\n";
+        info += "Plateformes: " + std::to_string(platforms.size());
+        
+        editorText.setString(info);
+        window.draw(editorText);
+    }
+
+    // Draw save confirmation message
+    if (saveMessageTimer > 0.0f && editorFont.getInfo().family != "") {
+        float alpha = std::min(255.0f, saveMessageTimer * 255.0f / 2.0f);
+        saveMessageText.setFillColor(sf::Color(saveMessageText.getFillColor().r, 
+                                               saveMessageText.getFillColor().g, 
+                                               saveMessageText.getFillColor().b, 
+                                               static_cast<sf::Uint8>(alpha)));
+        window.draw(saveMessageText);
+    }
+}
+
+void Game::saveLevelToFile() {
+    if (currentLevelPath.empty()) {
+        std::cout << "Erreur: Pas de niveau charge pour sauvegarder\n";
+        return;
+    }
+
+    // Always save to source directory: PlatformerGame/assets/levels/...
+    // Extract filename from currentLevelPath (e.g., "zone1_level1.json")
+    std::string filename;
+    size_t lastSlash = currentLevelPath.find_last_of("/\\");
+    if (lastSlash != std::string::npos) {
+        filename = currentLevelPath.substr(lastSlash + 1);
+    } else {
+        filename = currentLevelPath;
+    }
+    
+    // Try to find the source directory by going up from current working directory
+    // We're likely in build/bin/Release or similar, need to go up to nouveauprojet/PlatformerGame/
+    std::string savePath;
+    
+    try {
+        // Get current working directory
+        std::filesystem::path currentDir = std::filesystem::current_path();
+        std::filesystem::path sourcePath = currentDir;
+        
+        // Try to find "nouveauprojet" or "PlatformerGame" in the path
+        bool foundNouveauprojet = false;
+        for (int i = 0; i < 10; ++i) {
+            if (sourcePath.filename() == "nouveauprojet" || sourcePath.filename() == "PlatformerGame") {
+                foundNouveauprojet = true;
+                break;
+            }
+            if (sourcePath.has_parent_path()) {
+                sourcePath = sourcePath.parent_path();
+            } else {
+                break;
+            }
+        }
+        
+        if (foundNouveauprojet) {
+            if (sourcePath.filename() == "nouveauprojet") {
+                savePath = (sourcePath / "PlatformerGame" / "assets" / "levels" / filename).string();
+            } else {
+                savePath = (sourcePath / "assets" / "levels" / filename).string();
+            }
+            std::cout << "Chemin source construit: " << savePath << "\n";
+        } else {
+            // Fallback: try relative paths
+            std::vector<std::string> possiblePaths = {
+                "../../../PlatformerGame/assets/levels/" + filename,
+                "../../PlatformerGame/assets/levels/" + filename,
+                "../PlatformerGame/assets/levels/" + filename,
+                "PlatformerGame/assets/levels/" + filename
+            };
+            
+            bool found = false;
+            for (const auto& path : possiblePaths) {
+                std::ifstream test(path);
+                if (test.is_open()) {
+                    test.close();
+                    savePath = path;
+                    found = true;
+                    std::cout << "Fichier source trouve (relatif): " << savePath << "\n";
+                    break;
+                }
+            }
+            
+            if (!found) {
+                savePath = "../../../PlatformerGame/assets/levels/" + filename;
+                std::cout << "Utilisation du chemin par defaut: " << savePath << "\n";
+            }
+        }
+    } catch (const std::exception&) {
+        // Fallback to relative path if filesystem operations fail
+        savePath = "../../../PlatformerGame/assets/levels/" + filename;
+        std::cout << "Erreur filesystem, utilisation chemin par defaut: " << savePath << "\n";
+    }
+
+#if GAME_HAS_JSON
+    // Load existing JSON structure
+    std::ifstream file(savePath);
+    if (!file.is_open()) {
+        std::cout << "Erreur: Impossible d'ouvrir " << savePath << " pour sauvegarde\n";
+        std::cout << "Tentative avec le chemin original: " << currentLevelPath << "\n";
+        saveMessageTimer = 2.0f;
+        saveMessageText.setString("Erreur: Fichier introuvable");
+        saveMessageText.setFillColor(sf::Color::Red);
+        return;
+    }
+
+    nlohmann::json j;
+    file >> j;
+    file.close();
+
+    // Update platforms array
+    j["platforms"] = nlohmann::json::array();
+    for (const auto& platform : platforms) {
+        sf::FloatRect bounds = platform->getBounds();
+        nlohmann::json p;
+        p["x"] = bounds.left;
+        p["y"] = bounds.top;
+        p["width"] = bounds.width;
+        p["height"] = bounds.height;
+        j["platforms"].push_back(p);
+    }
+
+    // Save back to file
+    std::ofstream outFile(savePath);
+    if (!outFile.is_open()) {
+        std::cout << "Erreur: Impossible d'ecrire dans " << savePath << "\n";
+        std::cout << "Chemin original: " << currentLevelPath << "\n";
+        return;
+    }
+
+    outFile << j.dump(2);
+    outFile.close();
+
+    std::cout << "Niveau sauvegarde dans " << savePath << " (" << platforms.size() << " plateformes)\n";
+    std::cout << "Verifie le fichier: " << savePath << "\n";
+    
+    // Reload level to sync with file
+    loadLevel(currentLevelPath);
+    selectedPlatformIndex = -1;
+    isDraggingPlatform = false;
+    
+    // Show save confirmation message
+    saveMessageTimer = 2.0f;
+    saveMessageText.setString("Niveau sauvegarde !");
+    saveMessageText.setFillColor(sf::Color::Green);
+#else
+    // Fallback: manual JSON writing
+    std::ifstream inFile(savePath);
+    if (!inFile.is_open()) {
+        std::cout << "Erreur: Impossible d'ouvrir " << savePath << " pour sauvegarde\n";
+        saveMessageTimer = 2.0f;
+        saveMessageText.setString("Erreur: Fichier introuvable");
+        saveMessageText.setFillColor(sf::Color::Red);
+        return;
+    }
+
+    std::stringstream buffer;
+    buffer << inFile.rdbuf();
+    std::string content = buffer.str();
+    inFile.close();
+    
+    // Update savePath if we used fallback
+    if (savePath != currentLevelPath && savePath.find("PlatformerGame/") == std::string::npos) {
+        // Re-check if we need to convert path
+        size_t buildPos = savePath.find("build/");
+        if (buildPos != std::string::npos) {
+            size_t assetsPos = savePath.find("assets/");
+            if (assetsPos != std::string::npos) {
+                savePath = "PlatformerGame/" + savePath.substr(assetsPos);
+            }
+        }
+    }
+
+    // Find platforms section and replace it
+    size_t platformsStart = content.find("\"platforms\"");
+    if (platformsStart == std::string::npos) {
+        std::cout << "Erreur: Section platforms non trouvee dans le JSON\n";
+        saveMessageTimer = 2.0f;
+        saveMessageText.setString("Erreur: Format JSON invalide");
+        saveMessageText.setFillColor(sf::Color::Red);
+        return;
+    }
+
+    size_t arrayStart = content.find("[", platformsStart);
+    if (arrayStart == std::string::npos) {
+        std::cout << "Erreur: Tableau platforms non trouve\n";
+        saveMessageTimer = 2.0f;
+        saveMessageText.setString("Erreur: Format JSON invalide");
+        saveMessageText.setFillColor(sf::Color::Red);
+        return;
+    }
+
+    size_t arrayEnd = arrayStart + 1;
+    int bracketDepth = 1;
+    while (arrayEnd < content.length() && bracketDepth > 0) {
+        if (content[arrayEnd] == '[') bracketDepth++;
+        else if (content[arrayEnd] == ']') bracketDepth--;
+        arrayEnd++;
+    }
+
+    // Build new platforms array
+    std::string newPlatforms = "[\n";
+    for (size_t i = 0; i < platforms.size(); ++i) {
+        sf::FloatRect bounds = platforms[i]->getBounds();
+        newPlatforms += "    { \"x\": " + std::to_string(static_cast<int>(bounds.left)) + 
+                       ", \"y\": " + std::to_string(static_cast<int>(bounds.top)) +
+                       ", \"width\": " + std::to_string(static_cast<int>(bounds.width)) +
+                       ", \"height\": " + std::to_string(static_cast<int>(bounds.height)) + " }";
+        if (i < platforms.size() - 1) {
+            newPlatforms += ",";
+        }
+        newPlatforms += "\n";
+    }
+    newPlatforms += "  ]";
+
+    // Replace platforms array in content
+    content.replace(arrayStart, arrayEnd - arrayStart, newPlatforms);
+
+    // Write back to file
+    std::ofstream outFile(savePath);
+    if (!outFile.is_open()) {
+        std::cout << "Erreur: Impossible d'ecrire dans " << savePath << "\n";
+        saveMessageTimer = 2.0f;
+        saveMessageText.setString("Erreur: Ecriture impossible");
+        saveMessageText.setFillColor(sf::Color::Red);
+        return;
+    }
+
+    outFile << content;
+    outFile.close();
+
+    std::cout << "Niveau sauvegarde (fallback) dans " << savePath << " (" << platforms.size() << " plateformes)\n";
+    std::cout << "Verifie le fichier: " << savePath << "\n";
+    
+    // Reload level to sync with file
+    loadLevel(currentLevelPath);
+    selectedPlatformIndex = -1;
+    isDraggingPlatform = false;
+    
+    // Show save confirmation message
+    saveMessageTimer = 2.0f;
+    saveMessageText.setString("Niveau sauvegarde !");
+    saveMessageText.setFillColor(sf::Color::Green);
+#endif
 }
