@@ -3,11 +3,12 @@
 #include <SFML/Window/Keyboard.hpp>
 #include <string>
 
+// Logical actions → SFML keys. Serialized by InputConfig.
 struct InputBindings {
     sf::Keyboard::Key moveLeft;
     sf::Keyboard::Key moveRight;
     sf::Keyboard::Key jump;
-    sf::Keyboard::Key ability;  // Special ability key
+    sf::Keyboard::Key ability;
     sf::Keyboard::Key menuUp;
     sf::Keyboard::Key menuDown;
     sf::Keyboard::Key menuSelect;

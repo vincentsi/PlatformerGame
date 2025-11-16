@@ -18,6 +18,7 @@ set(SOURCES
     src/entities/PatrolEnemy.cpp
     src/entities/Spike.cpp
     src/entities/FlyingEnemy.cpp
+    src/entities/KineticWaveProjectile.cpp
     src/world/Platform.cpp
     src/world/Camera.cpp
     src/world/GoalZone.cpp
@@ -38,6 +39,10 @@ set(SOURCES
     src/effects/CameraShake.cpp
     src/effects/ScreenTransition.cpp
     src/audio/AudioManager.cpp
+    src/graphics/SpriteManager.cpp
+    src/graphics/AnimatedSprite.cpp
+    src/graphics/Tileset.cpp
+    src/graphics/ParallaxLayer.cpp
 )
 
 # Header files
@@ -53,6 +58,7 @@ set(HEADERS
     include/entities/PatrolEnemy.h
     include/entities/Spike.h
     include/entities/FlyingEnemy.h
+    include/entities/KineticWaveProjectile.h
     include/world/Platform.h
     include/world/Camera.h
     include/world/GoalZone.h
@@ -73,6 +79,10 @@ set(HEADERS
     include/effects/CameraShake.h
     include/effects/ScreenTransition.h
     include/audio/AudioManager.h
+    include/graphics/SpriteManager.h
+    include/graphics/AnimatedSprite.h
+    include/graphics/Tileset.h
+    include/graphics/ParallaxLayer.h
 )
 
 # Create executable

@@ -19,6 +19,7 @@ public:
     void emitDeath(const sf::Vector2f& position);
     void emitVictory(const sf::Vector2f& position);
     void emitGoalGlow(const sf::Vector2f& position, const sf::Vector2f& size);
+    void emitKineticWave(const sf::Vector2f& position, const sf::Vector2f& direction, float range);
 
     void clear();
 

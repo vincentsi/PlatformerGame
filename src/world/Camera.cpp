@@ -2,6 +2,8 @@
 #include "core/Config.h"
 #include <algorithm>
 
+// Smooth follow camera. Keeps the target centered, clamped to level limits,
+// then adds a small shake offset on top for feedback.
 Camera::Camera(float width, float height)
     : view(sf::FloatRect(0.0f, 0.0f, width, height))
     , smoothing(Config::CAMERA_SMOOTHING)

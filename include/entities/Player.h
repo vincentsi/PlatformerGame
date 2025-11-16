@@ -2,6 +2,9 @@
 
 #include "Entity.h"
 #include <SFML/Graphics.hpp>
+#include "graphics/SpriteManager.h"
+#include <vector>
+#include <string>
 
 enum class CharacterType {
     Lyra,
@@ -67,6 +70,7 @@ public:
     bool hasKineticWaveActive() const { return kineticWaveActive; }
     bool hasKineticWaveJustActivated() const { return kineticWaveJustActivated; }
     void clearKineticWaveActivation() { kineticWaveJustActivated = false; }
+    float getAbilityAnimationTimer() const { return abilityAnimationTimer; }
 
 private:
     void applyGravity(float dt);
@@ -80,8 +84,73 @@ private:
     void useBerserk();           // Sera
 
 private:
-    sf::RectangleShape shape;
+    sf::RectangleShape shape;  // Fallback si pas de sprite
+    sf::Sprite sprite;         // Sprite actuel
+    std::vector<sf::Texture*> idleTexturesSouth;  // Textures pour l'animation idle (face caméra/bas)
+    std::vector<sf::Texture*> idleTexturesNorth;  // Textures pour dos/haut
+    std::vector<sf::Texture*> idleTexturesEast;   // Textures pour droite
+    std::vector<sf::Texture*> idleTexturesWest;   // Textures pour gauche
+    std::vector<sf::Texture*> runTexturesSouth;   // Textures pour l'animation run (face caméra/bas)
+    std::vector<sf::Texture*> runTexturesNorth;   // Textures pour run dos/haut
+    std::vector<sf::Texture*> runTexturesEast;    // Textures pour run droite
+    std::vector<sf::Texture*> runTexturesWest;    // Textures pour run gauche
+    std::vector<sf::Texture*> jumpTexturesSouth;  // Textures pour l'animation jump
+    std::vector<sf::Texture*> jumpTexturesNorth;
+    std::vector<sf::Texture*> jumpTexturesEast;
+    std::vector<sf::Texture*> jumpTexturesWest;
+    std::vector<sf::Texture*> doubleJumpTexturesSouth; // Textures pour double jump
+    std::vector<sf::Texture*> doubleJumpTexturesNorth;
+    std::vector<sf::Texture*> doubleJumpTexturesEast;
+    std::vector<sf::Texture*> doubleJumpTexturesWest;
+    std::vector<sf::Texture*> hurtTexturesSouth;  // Textures pour l'animation hurt
+    std::vector<sf::Texture*> hurtTexturesNorth;
+    std::vector<sf::Texture*> hurtTexturesEast;
+    std::vector<sf::Texture*> hurtTexturesWest;
+    std::vector<sf::Texture*> deathTexturesSouth; // Textures pour l'animation death
+    std::vector<sf::Texture*> deathTexturesNorth;
+    std::vector<sf::Texture*> deathTexturesEast;
+    std::vector<sf::Texture*> deathTexturesWest;
+    std::vector<sf::Texture*> abilityTexturesSouth; // Textures pour l'animation ability (Kinetic Wave)
+    std::vector<sf::Texture*> abilityTexturesNorth;
+    std::vector<sf::Texture*> abilityTexturesEast;
+    std::vector<sf::Texture*> abilityTexturesWest;
+    std::vector<sf::Texture*> currentAnimationTextures; // Textures de l'animation actuelle
+    int currentAnimationFrame;
+    float animationTimer;
+    float idleFrameDuration;
+    float runFrameDuration;
+    float jumpFrameDuration;
+    float doubleJumpFrameDuration;
+    float hurtFrameDuration;
+    float deathFrameDuration;
+    float abilityFrameDuration;
+    bool useSprites;  // Utilise les sprites ou le rectangle coloré?
+    int facingDirection; // 0 = face (south/bas), 2 = dos (north/haut), 1 = droite (east), -1 = gauche (west)
+    bool isRunning;   // true = run animation, false = idle animation
+    float hurtAnimationTimer; // Timer pour animation hurt (joue une fois)
+    float abilityAnimationTimer; // Timer pour animation ability (joue une fois)
+    
+    enum class AnimationState {
+        Idle,
+        Run,
+        Jump,
+        DoubleJump,
+        Hurt,
+        Death,
+        Ability
+    };
+    AnimationState currentAnimationState;
+    
     CharacterType characterType;
+    
+    void loadIdleAnimation();
+    void loadRunAnimation();
+    void loadJumpAnimation();
+    void loadDoubleJumpAnimation();
+    void loadHurtAnimation();
+    void loadDeathAnimation();
+    void loadAbilityAnimation();
+    void updateAnimation(float dt);
 
     // Coyote time (grace period for jumping after leaving platform)
     float coyoteTimeCounter;

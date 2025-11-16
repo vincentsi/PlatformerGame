@@ -44,10 +44,9 @@ std::string Logger::getLevelString(Level level) {
 
 void Logger::log(Level level, const std::string& message) {
     if (!initialized) {
-        init(); // Auto-initialize if not done
+        init();
     }
 
-    // Get current time
     auto now = std::time(nullptr);
     std::tm localTime;
 #ifdef _WIN32
@@ -59,18 +58,15 @@ void Logger::log(Level level, const std::string& message) {
     std::ostringstream timestamp;
     timestamp << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S");
 
-    // Format log message
     std::string levelStr = getLevelString(level);
     std::string logMessage = "[" + timestamp.str() + "] [" + levelStr + "] " + message;
 
-    // Output to console
     if (level == Error || level == Warning) {
         std::cerr << logMessage << "\n";
     } else {
         std::cout << logMessage << "\n";
     }
 
-    // Output to file if available
     if (logFileStream && logFileStream->is_open()) {
         *logFileStream << logMessage << "\n";
         logFileStream->flush();

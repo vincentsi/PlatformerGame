@@ -16,8 +16,8 @@ namespace Config {
     constexpr float JUMP_BUFFER = 0.1f;         // seconds
 
     // Player settings
-    constexpr float PLAYER_WIDTH = 32.0f;
-    constexpr float PLAYER_HEIGHT = 48.0f;
+    constexpr float PLAYER_WIDTH = 48.0f;
+    constexpr float PLAYER_HEIGHT = 64.0f;
 
     // Platform settings
     constexpr float PLATFORM_HEIGHT = 20.0f;
@@ -27,7 +27,7 @@ namespace Config {
 
     // Death settings
     constexpr float DEATH_ZONE_Y = 800.0f;      // Y position below which player dies (just below screen)
-    constexpr float RESPAWN_TIME = 0.5f;        // seconds before respawn
+    constexpr float RESPAWN_TIME = 2.0f;        // seconds before respawn (time to show death animation)
 
     // Debug
     constexpr bool SHOW_FPS = true;

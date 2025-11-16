@@ -121,17 +121,13 @@ bool InputConfig::loadFromFile(const std::string& filename) {
         return false;
     }
 
-    // Helper function to validate key code
     auto isValidKey = [](int keyCode) -> bool {
-        // SFML key codes range from 0 to ~100 (Keyboard::KeyCount)
-        // Check if key is within valid range
         return keyCode >= 0 && keyCode < static_cast<int>(sf::Keyboard::KeyCount);
     };
 
     int key;
     bool valid = true;
 
-    // Read and validate each key binding
     if (file >> key && isValidKey(key)) {
         bindings.moveLeft = static_cast<sf::Keyboard::Key>(key);
     } else {
@@ -190,7 +186,6 @@ bool InputConfig::loadFromFile(const std::string& filename) {
 
     file.close();
 
-    // If any key was invalid, reset to defaults for safety
     if (!valid) {
         std::cout << "Config file contained invalid keys, resetting to defaults\n";
         resetToDefaults();

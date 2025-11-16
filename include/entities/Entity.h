@@ -12,9 +12,9 @@ public:
 
     // Getters
     sf::FloatRect getBounds() const;
-    sf::Vector2f getPosition() const { return position; }
-    sf::Vector2f getVelocity() const { return velocity; }
-    sf::Vector2f getSize() const { return size; }
+    const sf::Vector2f& getPosition() const { return position; }
+    const sf::Vector2f& getVelocity() const { return velocity; }
+    const sf::Vector2f& getSize() const { return size; }
 
     // Setters
     void setPosition(float x, float y);

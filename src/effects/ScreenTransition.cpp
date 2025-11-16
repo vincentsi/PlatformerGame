@@ -1,3 +1,4 @@
+// Full-screen black overlay used to fade between levels / states.
 #include "effects/ScreenTransition.h"
 
 ScreenTransition::ScreenTransition()
@@ -41,7 +42,7 @@ void ScreenTransition::update(float dt) {
 
 void ScreenTransition::draw(sf::RenderWindow& window) {
     if (state != State::None) {
-        // Draw in UI space (not world space)
+        // Always draw in screen space so the fade ignores the world camera.
         sf::View oldView = window.getView();
         window.setView(window.getDefaultView());
         window.draw(overlay);

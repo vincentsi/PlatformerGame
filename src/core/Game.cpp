@@ -1,11 +1,39 @@
+// Game loop, level management, camera, transitions.
+// Central place where input, physics, combat and UI are orchestrated.
 #include "core/Game.h"
 #include "core/Config.h"
 #include "core/InputConfig.h"
 #include "core/Logger.h"
+#include "core/SaveSystem.h"
+#include "entities/Player.h"
+#include "entities/Enemy.h"
+#include "entities/PatrolEnemy.h"
+#include "entities/Spike.h"
+#include "entities/FlyingEnemy.h"
+#include "entities/KineticWaveProjectile.h"
+#include "world/Platform.h"
+#include "world/Camera.h"
+#include "world/GoalZone.h"
+#include "world/Checkpoint.h"
+#include "world/InteractiveObject.h"
+#include "world/LevelLoader.h"
+#include "ui/GameUI.h"
+#include "ui/TitleScreen.h"
+#include "ui/PauseMenu.h"
+#include "ui/SettingsMenu.h"
+#include "ui/KeyBindingMenu.h"
+#include "effects/ParticleSystem.h"
+#include "effects/CameraShake.h"
+#include "effects/ScreenTransition.h"
+#include "audio/AudioManager.h"
+#include "graphics/SpriteManager.h"
 #include "physics/CollisionSystem.h"
 #include <iostream>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
+#include <unordered_map>
+#include <cstdint>
 
 Game::Game()
     : window(sf::VideoMode(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT), Config::WINDOW_TITLE)
@@ -22,6 +50,14 @@ Game::Game()
     , fpsUpdateTime(0.0f)
     , frameCount(0)
     , activeCheckpointId("")
+    , bgWallPlain32(nullptr)
+    , bgWallCables32(nullptr)
+    , bgFarTexture(nullptr)
+    , bgWallPlainVarA32(nullptr)
+    , bgWallPlainVarB32(nullptr)
+    , bgWallCablesAlt32(nullptr)
+    , doorKeyHeld(false)
+    , lastAbilityTimer(0.0f)
 {
     window.setFramerateLimit(Config::FRAMERATE_LIMIT);
 
@@ -84,6 +120,9 @@ Game::Game()
 
     // Load input configuration
     InputConfig::getInstance().loadFromFile();
+    
+    // Initialize platform tileset
+    Platform::initTileset();
 
     // Check for existing save
     titleScreen->setCanContinue(SaveSystem::saveExists());
@@ -149,6 +188,10 @@ void Game::processEvents() {
                 // Note: All menu states (TitleScreen, Paused, Settings, Controls)
                 // handle ESC through their respective menu handleInput() methods
             }
+            // Back to previous level with Backspace while playing
+            if (event.key.code == sf::Keyboard::BackSpace && gameState == GameState::Playing) {
+                goBackOneLevel();
+            }
 
             // Character switch with TAB key (only during gameplay)
             if (event.key.code == sf::Keyboard::Tab && gameState == GameState::Playing) {
@@ -210,6 +253,14 @@ void Game::handleInput() {
     Player* player = getActivePlayer();
     if (!player) return;
 
+    // Disable inputs while dead (no movement or actions during death animation)
+    if (player->isDead()) {
+        // lock horizontal velocity
+        sf::Vector2f v = player->getVelocity();
+        player->setVelocity(0.0f, v.y);
+        return;
+    }
+
     // Jump (check every frame for better responsiveness)
     if (sf::Keyboard::isKeyPressed(bindings.jump)) {
         player->jump();
@@ -239,7 +290,6 @@ void Game::handleInput() {
 }
 
 void Game::update(float dt) {
-    // Update menus based on state
     if (gameState == GameState::TitleScreen && titleScreen) {
         titleScreen->update(dt);
         return;
@@ -254,42 +304,71 @@ void Game::update(float dt) {
         return;
     }
 
-    // Only update gameplay when playing or transitioning
     if (gameState != GameState::Playing && gameState != GameState::Transitioning) {
         return;
     }
 
-    // Update screen transition
     if (isTransitioning) {
         screenTransition->update(dt);
 
-        // When fade out completes, load the next level
         if (screenTransition->isFadedOut() && !nextLevelPath.empty()) {
+            std::string previousLevelPath = currentLevelPath;
+            std::string previousCheckpoint = activeCheckpointId;
+            
+            if (!previousLevelPath.empty()) {
+                levelCheckpoints[previousLevelPath] = previousCheckpoint;
+            }
+            
             loadLevel(nextLevelPath);
             nextLevelPath = "";
-            screenTransition->startFadeIn(0.5f);
-            levelCompleted = false;  // Reset for new level
+            
+            if (pendingSpawnEdge == 1) {
+                if (levelHistoryPos > 0) {
+                    levelHistoryPos--;
+                }
+            } else {
+                if (!previousLevelPath.empty() && (levelHistory.empty() || levelHistory.back() != previousLevelPath)) {
+                    levelHistory.push_back(previousLevelPath);
+                }
+                levelHistory.push_back(currentLevelPath);
+                levelHistoryPos = static_cast<int>(levelHistory.size()) - 1;
+            }
+            
+            auto it = levelCheckpoints.find(currentLevelPath);
+            if (it != levelCheckpoints.end() && !it->second.empty()) {
+                activeCheckpointId = it->second;
+                for (auto& checkpoint : checkpoints) {
+                    if (checkpoint->getId() == activeCheckpointId) {
+                        checkpoint->activate();
+                        break;
+                    }
+                }
+            }
+            
+            screenTransition->startFadeIn(0.9f);
+            levelCompleted = false;
             victoryEffectsTriggered = false;
         }
 
-        // When fade in completes, resume gameplay
         if (screenTransition->isComplete()) {
             isTransitioning = false;
+            postTransitionHideFrames = 2;
         }
 
-        return; // Skip normal gameplay updates during transition
+        return;
     }
 
-    // Get active player
     Player* player = getActivePlayer();
     if (!player) {
-        return; // No player yet (on title screen)
+        return;
     }
 
-    // Update ONLY the active player (inactive ones stay frozen)
+    if (postTransitionHideFrames > 0) {
+        postTransitionHideFrames--;
+    }
+
     player->update(dt);
 
-    // Check collisions with platforms FIRST
     sf::FloatRect playerBounds = player->getBounds();
     sf::Vector2f playerVel = player->getVelocity();
     bool grounded = false;
@@ -310,7 +389,6 @@ void Game::update(float dt) {
 
     player->setGrounded(grounded);
 
-    // NOW check player events for effects (AFTER setGrounded sets the flags)
     if (player->hasJustJumped()) {
         sf::Vector2f playerPos = player->getPosition();
         particleSystem->emitJump(sf::Vector2f(playerPos.x + 20.0f, playerPos.y + 40.0f));
@@ -324,13 +402,10 @@ void Game::update(float dt) {
         cameraShake->shakeLight();
     }
 
-    // Clear event flags after processing them
     player->clearEventFlags();
 
-    // Update UI health display
     gameUI->setHealth(player->getHealth(), player->getMaxHealth());
 
-    // Track deaths
     if (player->isDead() && !playerWasDead) {
         gameUI->incrementDeaths();
         playerWasDead = true;
@@ -353,6 +428,9 @@ void Game::update(float dt) {
         if (!checkpoint->isActivated() && checkpoint->isPlayerInside(player->getBounds())) {
             checkpoint->activate();
             activeCheckpointId = checkpoint->getId();
+            if (!currentLevelPath.empty()) {
+                levelCheckpoints[currentLevelPath] = activeCheckpointId;
+            }
             player->setSpawnPoint(checkpoint->getSpawnPosition().x, checkpoint->getSpawnPosition().y);
             audioManager->playSound("checkpoint", 70.0f);
 
@@ -367,6 +445,57 @@ void Game::update(float dt) {
         if (interactive) {
             interactive->update(dt);
         }
+    }
+
+    // Edge-based level transitions (screen edges act like doors)
+    if (!isTransitioning && currentLevel && !currentLevel->cameraZones.empty()) {
+        const auto& zone = currentLevel->cameraZones[0];
+        float leftEdge = zone.minX;
+        float rightEdge = zone.maxX;
+        float x = player->getPosition().x;
+        float margin = 8.0f;
+
+        // Go to previous level if player exits left and a history exists
+        if (x < leftEdge - margin && levelHistoryPos > 0) {
+            goBackOneLevel();
+            return;
+        }
+
+        // Go to next level if player exits right and there is a next level defined
+        if (x > rightEdge + margin) {
+            // Determine next level from level graph if available
+            if (currentLevel && !currentLevel->nextLevels.empty()) {
+                std::string nextLevelId = currentLevel->nextLevels[0];
+                nextLevelPath = "assets/levels/" + nextLevelId + ".json";
+            } else {
+                // Fallback: legacy linear progression
+                currentLevelNumber++;
+                nextLevelPath = "assets/levels/level" + std::to_string(currentLevelNumber) + ".json";
+            }
+
+            pendingSpawnEdge = 0; // appear at left edge of next level
+            isTransitioning = true;
+            // Fade out encore plus long (transition plus douce)
+            screenTransition->startFadeOut(1.3f);
+            return;
+        }
+    }
+
+    // Door backtracking: if player presses Up/W inside a Door, go back one level
+    {
+        const bool keyPressed = sf::Keyboard::isKeyPressed(sf::Keyboard::Up) ||
+                                sf::Keyboard::isKeyPressed(sf::Keyboard::W);
+        if (!doorKeyHeld && keyPressed && !isTransitioning && player && levelHistoryPos > 0) {
+            for (auto& interactive : interactiveObjects) {
+                if (!interactive) continue;
+                if (interactive->getType() != InteractiveType::Door) continue;
+                if (player->getBounds().intersects(interactive->getBounds())) {
+                    goBackOneLevel();
+                    break;
+                }
+            }
+        }
+        doorKeyHeld = keyPressed;
     }
 
     // Handle Noah's Hack ability (interact with terminals, doors, etc.)
@@ -403,43 +532,118 @@ void Game::update(float dt) {
         }
     }
 
-    // Handle Lyra's Kinetic Wave ability (push enemies away once when activated)
-    if (player && player->hasKineticWaveJustActivated() && player->getCharacterType() == CharacterType::Lyra) {
-        sf::Vector2f playerPos = player->getPosition();
-        sf::Vector2f waveDir = player->getKineticWaveDirection();
-        float waveRange = Config::KINETIC_WAVE_RANGE;
+    // Handle Lyra's Kinetic Wave ability - create projectile during animation
+    if (player && player->getCharacterType() == CharacterType::Lyra) {
+        float abilityTimer = player->getAbilityAnimationTimer();
         
-        for (auto& enemy : enemies) {
-            if (!enemy || !enemy->isAlive()) {
-                continue;
-            }
+        // Create projectile very late in ability animation (when projectile is actually launched)
+        // Ability animation is 0.6s total, launch projectile at the very end (almost finished)
+        // Only create once when timer crosses threshold (when animation is almost done)
+        if (abilityTimer > 0.05f && abilityTimer <= 0.1f && lastAbilityTimer > 0.1f) {
+            // Timer is very low (animation almost finished), create projectile
+            sf::Vector2f playerPos = player->getPosition();
+            sf::Vector2f waveDir = player->getKineticWaveDirection();
+            float waveRange = Config::KINETIC_WAVE_RANGE;
             
-            sf::Vector2f enemyPos = enemy->getPosition();
-            sf::Vector2f toEnemy = enemyPos - playerPos;
-            float distance = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
-            
-                // Check if enemy is in range and in front of player
-                if (distance <= waveRange && distance > 0.0f) {
-                    // Normalize direction
-                    sf::Vector2f dirToEnemy = sf::Vector2f(toEnemy.x / distance, toEnemy.y / distance);
-                    
-                    // Check if enemy is in the direction of the wave (forward-facing)
-                    float dot = dirToEnemy.x * waveDir.x;
-                    if (dot > Config::KINETIC_WAVE_DOT_THRESHOLD) {  // Enemy is in front (with some tolerance)
-                    // Push enemy away with force
-                    sf::Vector2f pushForce = dirToEnemy * Config::KINETIC_WAVE_FORCE;
-                    enemy->setVelocity(pushForce.x, pushForce.y);
-                    
-                    // Visual effect
-                    particleSystem->emitJump(enemyPos);
-                    audioManager->playSound("jump", 60.0f);
-                    cameraShake->shakeLight();
+            // Create moving projectile that travels forward
+            // Position at hands level (chest/torso area, aligned with arms)
+            // Player hitbox center is around torso, hands are at chest level (not head)
+            // Use positive Y offset to lower projectile (closer to ground, at hands level)
+            float handsOffsetX = waveDir.x * 25.0f; // Forward in direction
+            float handsOffsetY = 20.0f; // Below center (hands level, lower than before)
+            sf::Vector2f waveStartPos = playerPos + sf::Vector2f(handsOffsetX, handsOffsetY);
+            float projectileSpeed = 800.0f; // pixels per second
+            kineticWaveProjectiles.push_back(
+                std::make_unique<KineticWaveProjectile>(waveStartPos, waveDir, projectileSpeed, waveRange)
+            );
+        }
+        lastAbilityTimer = abilityTimer;
+
+        // Reset tracking when ability ends
+        if (abilityTimer <= 0.0f) {
+            lastAbilityTimer = 0.0f;
+        }
+    }
+    
+    // Build a simple spatial grid for enemies to reduce projectile/enemy checks
+    const float cellSize = 128.0f;
+    std::unordered_map<std::int64_t, std::vector<Enemy*>> enemyGrid;
+    enemyGrid.reserve(enemies.size() * 2);
+
+    auto makeCellKey = [](int cx, int cy) -> std::int64_t {
+        return (static_cast<std::int64_t>(cx) << 32) ^
+               (static_cast<std::int64_t>(cy) & 0xffffffffLL);
+    };
+
+    for (auto& enemyPtr : enemies) {
+        if (!enemyPtr || !enemyPtr->isAlive()) {
+            continue;
+        }
+        const sf::Vector2f& enemyPos = enemyPtr->getPosition();
+        const int cx = static_cast<int>(std::floor(enemyPos.x / cellSize));
+        const int cy = static_cast<int>(std::floor(enemyPos.y / cellSize));
+        enemyGrid[makeCellKey(cx, cy)].push_back(enemyPtr.get());
+    }
+
+    // Update Kinetic Wave projectiles
+    for (auto& projectile : kineticWaveProjectiles) {
+        if (!projectile || !projectile->isAlive()) {
+            continue;
+        }
+
+        projectile->update(dt);
+
+        // Broad phase: only test enemies in neighboring grid cells
+        const sf::Vector2f& projectilePos = projectile->getPosition();
+        const int pcx = static_cast<int>(std::floor(projectilePos.x / cellSize));
+        const int pcy = static_cast<int>(std::floor(projectilePos.y / cellSize));
+
+        for (int gx = pcx - 1; gx <= pcx + 1; ++gx) {
+            for (int gy = pcy - 1; gy <= pcy + 1; ++gy) {
+                auto it = enemyGrid.find(makeCellKey(gx, gy));
+                if (it == enemyGrid.end()) {
+                    continue;
+                }
+
+                for (Enemy* enemy : it->second) {
+                    if (!enemy || !enemy->isAlive()) {
+                        continue;
+                    }
+
+                    const sf::Vector2f& enemyPos = enemy->getPosition();
+                    sf::Vector2f toEnemy = enemyPos - projectilePos;
+                    float distance = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
+
+                    // Check collision (projectile radius ~15px, enemy hitbox)
+                    if (distance < 40.0f) { // Slightly larger collision radius
+                        // Push enemy away with force
+                        sf::Vector2f dirToEnemy = (distance > 0.0f)
+                            ? sf::Vector2f(toEnemy.x / distance, toEnemy.y / distance)
+                            : sf::Vector2f(1.0f, 0.0f);
+                        sf::Vector2f pushForce = dirToEnemy * Config::KINETIC_WAVE_FORCE;
+                        enemy->setVelocity(pushForce.x, pushForce.y);
+
+                        // Visual effect at enemy position (impact)
+                        particleSystem->emitJump(enemyPos);
+                        audioManager->playSound("jump", 60.0f);
+                        cameraShake->shakeLight();
+
+                        // Mark projectile as dead after hitting enemy
+                        // (we'll add a hit flag later if needed to continue through enemies)
+                    }
                 }
             }
         }
-        
-        // Clear activation flag after processing
-        player->clearKineticWaveActivation();
+    }
+    
+    // Remove dead projectiles (swap-and-pop to avoid extra allocations)
+    for (std::size_t i = 0; i < kineticWaveProjectiles.size(); ) {
+        if (!kineticWaveProjectiles[i] || !kineticWaveProjectiles[i]->isAlive()) {
+            kineticWaveProjectiles[i] = std::move(kineticWaveProjectiles.back());
+            kineticWaveProjectiles.pop_back();
+        } else {
+            ++i;
+        }
     }
 
     // Update enemies
@@ -474,8 +678,8 @@ void Game::update(float dt) {
                 bool hitFromAbove = currentPlayerBounds.top + currentPlayerBounds.height <= enemyBounds.top + tolerance;
 
                 if (playerFalling && hitFromAbove) {
-                    // Zone 1 Level 2: Flying enemy allows bounce without killing (for secret)
-                    if (currentLevel && currentLevel->levelId == "zone1_level2" && enemy->getType() == EnemyType::Flying) {
+                    // Zone 1 Level 1: Flying enemy allows bounce without killing (for secret)
+                    if (currentLevel && currentLevel->levelId == "zone1_level1" && enemy->getType() == EnemyType::Flying) {
                         // Don't kill flying enemy, just bounce (allows multiple uses for secret)
                         // Bounce player up higher for secret access
                         player->setVelocity(player->getVelocity().x, Config::FLYING_ENEMY_BOUNCE_VELOCITY);
@@ -524,62 +728,8 @@ void Game::update(float dt) {
         enemies.end()
     );
 
-    // Update goal zone animation and emit particles
-    if (goalZone) {
-        goalZone->update(dt);
-        sf::FloatRect goalBounds = goalZone->getBounds();
-        particleSystem->emitGoalGlow(
-            sf::Vector2f(goalBounds.left + goalBounds.width / 2.0f, goalBounds.top + goalBounds.height / 2.0f),
-            sf::Vector2f(goalBounds.width, goalBounds.height)
-        );
-
-        // Check win condition
-        if (!levelCompleted && goalZone->isPlayerInside(player->getBounds())) {
-            levelCompleted = true;
-
-            // Determine next level based on zone system
-            if (currentLevel && currentLevel->isBossLevel) {
-                // Boss completed: transition to next zone
-                if (!currentLevel->nextZone.empty()) {
-                    // For now, transition to zone 2 hub (will be implemented as level select)
-                    // TODO: Implement zone 2 level selection menu
-                    std::cout << "Boss defeated! Zone " << currentLevel->zoneNumber << " complete!\n";
-                    std::cout << "Next zone: " << currentLevel->nextZone << "\n";
-                    // For now, load first level of next zone
-                    nextLevelPath = "assets/levels/" + currentLevel->nextZone + "_hub.json";
-                } else {
-                    // No next zone: game complete
-                    std::cout << "Game complete! No next zone defined.\n";
-                    // TODO: Show ending screen
-                    return;
-                }
-            } else if (currentLevel && !currentLevel->nextLevels.empty()) {
-                // Multiple next levels available (non-linear): show level select
-                std::string nextLevelId = currentLevel->nextLevels[0];
-                std::cout << "Next level ID: " << nextLevelId << "\n";
-                nextLevelPath = "assets/levels/" + nextLevelId + ".json";
-                std::cout << "Loading next level: " << nextLevelPath << "\n";
-                
-                if (currentLevel->nextLevels.size() > 1) {
-                    // Multiple paths: TODO - implement level select menu
-                    std::cout << "Multiple paths available: ";
-                    for (const auto& levelId : currentLevel->nextLevels) {
-                        std::cout << levelId << " ";
-                    }
-                    std::cout << "\n";
-                }
-            } else {
-                // Linear progression: increment level number (legacy support)
-                currentLevelNumber++;
-                nextLevelPath = "assets/levels/level" + std::to_string(currentLevelNumber) + ".json";
-            }
-
-            if (!nextLevelPath.empty()) {
-                isTransitioning = true;
-                screenTransition->startFadeOut(0.5f);
-            }
-        }
-    }
+    // GoalZone disabled (portals no longer used; edges handle transitions)
+    (void)goalZone;
 
     // Victory effects (only trigger once)
     if (levelCompleted && !victoryEffectsTriggered) {
@@ -602,15 +752,13 @@ void Game::update(float dt) {
 }
 
 void Game::render() {
-    window.clear(sf::Color(135, 206, 235)); // Sky blue background
+    window.clear(sf::Color(13, 27, 42));
 
-    // Render menus
     if (gameState == GameState::TitleScreen && titleScreen) {
         titleScreen->draw(window);
         window.display();
         return;
     } else if (gameState == GameState::Paused && pauseMenu) {
-        // Draw game in background (frozen)
         Player* player = getActivePlayer();
         if (camera && player) {
             camera->apply(window);
@@ -630,7 +778,6 @@ void Game::render() {
             window.setView(window.getDefaultView());
             if (gameUI) gameUI->draw(window);
         }
-        // Draw pause menu on top
         pauseMenu->draw(window);
         window.display();
         return;
@@ -644,67 +791,131 @@ void Game::render() {
         return;
     }
 
-    // Render gameplay
     Player* player = getActivePlayer();
-    if (gameState == GameState::Playing && camera && player) {
-        // Apply camera
+    bool shouldRenderGameplay = (gameState == GameState::Playing && camera && player) || 
+                                (isTransitioning && camera && player);
+    
+    if (shouldRenderGameplay) {
         camera->apply(window);
 
-        // Draw platforms
+        drawParallaxBackground(window);
+
         for (auto& platform : platforms) {
             platform->draw(window);
         }
 
-        // Draw checkpoints
         for (auto& checkpoint : checkpoints) {
             checkpoint->draw(window);
         }
 
-        // Draw interactive objects
-        for (auto& interactive : interactiveObjects) {
-            if (interactive) {
-                interactive->draw(window);
-            }
-        }
+        // for (auto& interactive : interactiveObjects) {
+        //     if (interactive) {
+        //         interactive->draw(window);
+        //     }
+        // }
 
-        // Draw goal zone
-        if (goalZone) {
-            goalZone->draw(window);
-        }
-
-        // Draw enemies
         for (auto& enemy : enemies) {
             if (enemy && enemy->isAlive()) {
                 enemy->draw(window);
             }
         }
 
-        // Draw particles (in world space)
+        for (const auto& projectile : kineticWaveProjectiles) {
+            if (projectile && projectile->isAlive()) {
+                projectile->draw(window);
+            }
+        }
+
         particleSystem->draw(window);
 
-        // Draw only the active player
-        if (player) {
+        if (player && !isTransitioning && postTransitionHideFrames == 0) {
             player->draw(window);
         }
 
-        // Reset to default view for UI
         window.setView(window.getDefaultView());
 
-        // Draw UI (deaths and timer)
         if (gameUI) {
             gameUI->draw(window);
         }
 
-        // Draw FPS
         if (Config::SHOW_FPS && debugFont.getInfo().family != "") {
             window.draw(fpsText);
         }
 
-        // Draw transition overlay (always on top)
         screenTransition->draw(window);
     }
 
     window.display();
+}
+
+void Game::drawParallaxBackground(sf::RenderWindow& renderWindow) {
+    if (!currentLevel || !camera) return;
+
+    if (currentLevel->zoneNumber == 1 && bgWallPlain32) {
+        sf::View view = renderWindow.getView();
+        sf::Vector2f center = view.getCenter();
+        sf::Vector2f size = view.getSize();
+
+        float left = center.x - size.x / 2.0f;
+        float right = center.x + size.x / 2.0f;
+        float top = center.y - size.y / 2.0f;
+        float bottom = center.y + size.y / 2.0f;
+
+        const float tileSize = 32.0f;
+        float startY = std::floor(top / tileSize) * tileSize;
+        float endY = std::ceil(bottom / tileSize) * tileSize;
+        float startX = std::floor(left / tileSize) * tileSize;
+        float endX = std::ceil(right / tileSize) * tileSize;
+
+        // Tuilage sans espace: on rogne automatiquement la texture pour enlever le padding transparent
+        static bool trimComputed = false;
+        static sf::IntRect trimRect(0,0,0,0);
+        if (!trimComputed) {
+            if (bgWallPlain32) {
+                sf::Image img = bgWallPlain32->copyToImage();
+                sf::Vector2u sz = img.getSize();
+                unsigned int minX = sz.x, minY = sz.y, maxX = 0, maxY = 0;
+                bool any = false;
+                for (unsigned int y = 0; y < sz.y; ++y) {
+                    for (unsigned int x = 0; x < sz.x; ++x) {
+                        if (img.getPixel(x, y).a > 0) {
+                            any = true;
+                            if (x < minX) minX = x;
+                            if (y < minY) minY = y;
+                            if (x > maxX) maxX = x;
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+                }
+                if (any) {
+                    trimRect = sf::IntRect(static_cast<int>(minX), static_cast<int>(minY),
+                                           static_cast<int>(maxX - minX + 1), static_cast<int>(maxY - minY + 1));
+                } else {
+                    trimRect = sf::IntRect(0,0,static_cast<int>(tileSize), static_cast<int>(tileSize));
+                }
+            }
+            trimComputed = true;
+        }
+
+        sf::Sprite sprite;
+        sprite.setTexture(*bgWallPlain32);
+        if (trimRect.width > 0 && trimRect.height > 0) {
+            sprite.setTextureRect(trimRect);
+            float scaleX = tileSize / static_cast<float>(trimRect.width);
+            float scaleY = tileSize / static_cast<float>(trimRect.height);
+            sprite.setScale(scaleX, scaleY);
+        } else {
+            sprite.setScale(1.0f, 1.0f);
+            sprite.setTextureRect(sf::IntRect(0, 0, static_cast<int>(tileSize), static_cast<int>(tileSize)));
+        }
+
+        for (float x = startX; x < endX; x += tileSize) {
+            for (float y = startY; y < endY; y += tileSize) {
+                sprite.setPosition(std::floor(x), std::floor(y));
+                renderWindow.draw(sprite);
+            }
+        }
+    }
 }
 
 void Game::loadLevel() {
@@ -715,6 +926,7 @@ void Game::loadLevel() {
 void Game::loadLevel(const std::string& levelPath) {
     // Load level from specified path
     currentLevel = LevelLoader::loadFromFile(levelPath);
+    currentLevelPath = levelPath;
 
         if (currentLevel) {
             // Move data from LevelData to Game
@@ -723,32 +935,111 @@ void Game::loadLevel(const std::string& levelPath) {
             interactiveObjects = std::move(currentLevel->interactiveObjects);
             goalZone = std::move(currentLevel->goalZone);
 
-        // Clear enemies and add level-specific enemies
+        // Clear enemies and projectiles, then add level-specific enemies
         enemies.clear();
+        kineticWaveProjectiles.clear();
         
-        // Zone 1 Level 2: Couloir - Premier monstre volant
-        if (currentLevel->levelId == "zone1_level2") {
+        // Zone 1 Level 1: Laboratoire - Premier monstre volant
+        if (currentLevel->levelId == "zone1_level1") {
             // Flying enemy horizontal (de gauche à droite) au-dessus de la plateforme
             // Position: au-dessus de la plateforme à y=400, patrouille horizontalement
             enemies.push_back(std::make_unique<FlyingEnemy>(600.0f, 400.0f, 800.0f, true));
         }
 
-        // Reset all players to level start position (only if players already exist)
+        // Zone 1 Level 2: Couloir - Ennemis et pièges denses (style Dead Cells)
+        if (currentLevel->levelId == "zone1_level2") {
+            // Ennemis patrouilleurs sur les plateformes (densité élevée)
+            enemies.push_back(std::make_unique<PatrolEnemy>(300.0f, 230.0f, 80.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(550.0f, 470.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(600.0f, 80.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(800.0f, 420.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(1100.0f, 70.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(1200.0f, 320.0f, 120.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(1500.0f, 190.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(1800.0f, 220.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(1900.0f, 150.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(2300.0f, 120.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(2600.0f, 80.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(3100.0f, 170.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(3300.0f, 30.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(3600.0f, 270.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(3700.0f, 110.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(4100.0f, 370.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(4050.0f, 50.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(4500.0f, 80.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(4700.0f, 180.0f, 100.0f));
+            enemies.push_back(std::make_unique<PatrolEnemy>(5000.0f, 330.0f, 100.0f));
+
+            // Flying enemies pour la verticalité
+            enemies.push_back(std::make_unique<FlyingEnemy>(700.0f, 300.0f, 200.0f, true));
+            enemies.push_back(std::make_unique<FlyingEnemy>(1600.0f, 200.0f, 200.0f, true));
+            enemies.push_back(std::make_unique<FlyingEnemy>(2800.0f, 100.0f, 200.0f, true));
+            enemies.push_back(std::make_unique<FlyingEnemy>(3900.0f, 200.0f, 200.0f, true));
+            enemies.push_back(std::make_unique<FlyingEnemy>(4800.0f, 300.0f, 200.0f, true));
+
+            // Pièges (spikes) stratégiquement placés partout
+            enemies.push_back(std::make_unique<Spike>(400.0f, 530.0f));
+            enemies.push_back(std::make_unique<Spike>(650.0f, 480.0f));
+            enemies.push_back(std::make_unique<Spike>(900.0f, 430.0f));
+            enemies.push_back(std::make_unique<Spike>(1100.0f, 380.0f));
+            enemies.push_back(std::make_unique<Spike>(1300.0f, 330.0f));
+            enemies.push_back(std::make_unique<Spike>(1600.0f, 280.0f));
+            enemies.push_back(std::make_unique<Spike>(1950.0f, 230.0f));
+            enemies.push_back(std::make_unique<Spike>(2200.0f, 180.0f));
+            enemies.push_back(std::make_unique<Spike>(2500.0f, 80.0f));
+            enemies.push_back(std::make_unique<Spike>(2750.0f, 80.0f));
+            enemies.push_back(std::make_unique<Spike>(3100.0f, 180.0f));
+            enemies.push_back(std::make_unique<Spike>(3400.0f, 230.0f));
+            enemies.push_back(std::make_unique<Spike>(3500.0f, 230.0f));
+            enemies.push_back(std::make_unique<Spike>(3800.0f, 330.0f));
+            enemies.push_back(std::make_unique<Spike>(4000.0f, 380.0f));
+            enemies.push_back(std::make_unique<Spike>(4300.0f, 430.0f));
+            enemies.push_back(std::make_unique<Spike>(4600.0f, 130.0f));
+            enemies.push_back(std::make_unique<Spike>(4900.0f, 280.0f));
+            enemies.push_back(std::make_unique<Spike>(5100.0f, 380.0f));
+        }
+
+        // Reset all players to level start position (or edge spawn if requested)
         if (!players.empty()) {
-            sf::Vector2f startPos = currentLevel->startPosition;
+            sf::Vector2f spawnPos = currentLevel->startPosition;
+            if (pendingSpawnEdge != -1 && !currentLevel->cameraZones.empty()) {
+                const auto& zone = currentLevel->cameraZones[0];
+                if (pendingSpawnEdge == 0) {
+                    // left edge spawn
+                    spawnPos.x = zone.minX + 80.0f;
+                } else if (pendingSpawnEdge == 1) {
+                    // right edge spawn
+                    spawnPos.x = zone.maxX - 80.0f;
+                }
+                // y stays from level start to ensure on ground
+            }
             for (auto& p : players) {
                 if (p) {
-                    p->setPosition(startPos.x, startPos.y);
-                    p->setSpawnPoint(startPos.x, startPos.y);
+                    p->setPosition(spawnPos.x, spawnPos.y);
+                    p->setSpawnPoint(spawnPos.x, spawnPos.y);
                     p->setVelocity(sf::Vector2f(0.0f, 0.0f));
                 }
             }
+            pendingSpawnEdge = -1; // consume
+        }
+
+        // Restore checkpoint state for this level
+        auto it = levelCheckpoints.find(currentLevelPath);
+        if (it != levelCheckpoints.end() && !it->second.empty()) {
+            activeCheckpointId = it->second;
+            for (auto& checkpoint : checkpoints) {
+                if (checkpoint->getId() == activeCheckpointId) {
+                    checkpoint->activate();
+                    break;
+                }
+            }
+        } else {
+            activeCheckpointId.clear();
         }
 
         // Reset level state
         levelCompleted = false;
         victoryEffectsTriggered = false;
-        activeCheckpointId = "";
         secretRoomUnlocked = false;
 
         // Update camera limits (only if camera exists)
@@ -771,8 +1062,43 @@ void Game::loadLevel(const std::string& levelPath) {
             gameUI->hideVictoryMessage();
         }
 
+        // Load background wall textures (parallax far + simple 32x32 tiling)
+        SpriteManager& sm = SpriteManager::getInstance();
+        if (currentLevel->zoneNumber == 1) {
+            if (sm.loadTexture("zone1_bg_far_dark_256", "assets/backgrounds/zone1/zone1_bg_far_dark_256.png")) {
+                bgFarTexture = sm.getTexture("zone1_bg_far_dark_256");
+            } else {
+                bgFarTexture = nullptr;
+            }
+            if (sm.loadTexture("zone1_bg_wall_plain_32", "assets/backgrounds/zone1/zone1_bg_wall_plain_32.png")) {
+                bgWallPlain32 = sm.getTexture("zone1_bg_wall_plain_32");
+            }
+            if (sm.loadTexture("zone1_bg_wall_plain_varA_32", "assets/backgrounds/zone1/zone1_bg_wall_plain_varA_32.png")) {
+                bgWallPlainVarA32 = sm.getTexture("zone1_bg_wall_plain_varA_32");
+            }
+            if (sm.loadTexture("zone1_bg_wall_plain_varB_32", "assets/backgrounds/zone1/zone1_bg_wall_plain_varB_32.png")) {
+                bgWallPlainVarB32 = sm.getTexture("zone1_bg_wall_plain_varB_32");
+            }
+            if (sm.loadTexture("zone1_bg_wall_cables_32", "assets/backgrounds/zone1/zone1_bg_wall_cables_32.png")) {
+                bgWallCables32 = sm.getTexture("zone1_bg_wall_cables_32");
+            }
+            if (sm.loadTexture("zone1_bg_wall_cables_alt_32", "assets/backgrounds/zone1/zone1_bg_wall_cables_alt_32.png")) {
+                bgWallCablesAlt32 = sm.getTexture("zone1_bg_wall_cables_alt_32");
+            }
+        }
+
         std::cout << "Level loaded: " << currentLevel->name << "\n";
     }
+}
+
+void Game::goBackOneLevel() {
+    if (levelHistoryPos <= 0 || isTransitioning) {
+        return;
+    }
+    nextLevelPath = levelHistory[levelHistoryPos - 1];
+    pendingSpawnEdge = 1;
+    isTransitioning = true;
+    screenTransition->startFadeOut(1.3f);
 }
 
 void Game::startNewGame() {
@@ -782,9 +1108,16 @@ void Game::startNewGame() {
     saveData = SaveData();
     saveData.currentLevel = 1;
     currentLevelNumber = 1;
+    levelHistory.clear();
+    levelHistoryPos = -1;
+    currentLevelPath.clear();
 
     // Load level first
     loadLevel();
+    if (!currentLevelPath.empty()) {
+        levelHistory.push_back(currentLevelPath);
+        levelHistoryPos = 0;
+    }
 
     // Create all 3 characters at level start position
     sf::Vector2f startPos = currentLevel ? currentLevel->startPosition : sf::Vector2f(100.0f, 100.0f);
@@ -831,6 +1164,9 @@ void Game::continueGame() {
 
     // Load save data
     if (SaveSystem::load(saveData)) {
+        levelHistory.clear();
+    levelHistoryPos = -1;
+        currentLevelPath.clear();
         currentLevelNumber = saveData.currentLevel;
 
         // Convert old save format (level number) to new format (level ID)
@@ -910,6 +1246,11 @@ void Game::continueGame() {
             }
 
             gameUI = std::make_unique<GameUI>();
+
+            if (!currentLevelPath.empty()) {
+                levelHistory.push_back(currentLevelPath);
+                levelHistoryPos = 0;
+            }
 
             setState(GameState::Playing);
         }

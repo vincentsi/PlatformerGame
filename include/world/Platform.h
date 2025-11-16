@@ -13,8 +13,17 @@ public:
     sf::Vector2f getPosition() const { return position; }
     sf::Vector2f getSize() const { return size; }
 
+    // Initialize tileset (call once before creating platforms)
+    static void initTileset();
+    
+    // Cleanup tileset
+    static void cleanupTileset();
+
 private:
     sf::Vector2f position;
     sf::Vector2f size;
-    sf::RectangleShape shape;
+    sf::RectangleShape shape; // Keep for collision bounds
+    sf::Sprite sprite; // For rendering tile
+    static bool tilesetLoaded;
+    static sf::Texture* tileTexture;
 };

@@ -1,3 +1,5 @@
+// Legacy MVP implementation of Game (single hardcoded level, no menus).
+// Kept only as reference; main gameplay now lives in Game.cpp.
 #include "core/Game.h"
 #include "core/Config.h"
 #include "physics/CollisionSystem.h"

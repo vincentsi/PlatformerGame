@@ -125,6 +125,55 @@ void ParticleSystem::emitGoalGlow(const sf::Vector2f& position, const sf::Vector
     }
 }
 
+void ParticleSystem::emitKineticWave(const sf::Vector2f& position, const sf::Vector2f& direction, float range) {
+    // Calculate angle from direction vector
+    const float PI = 3.14159265359f;
+    float baseAngle = std::atan2(direction.y, direction.x) * 180.0f / PI; // Convert to degrees
+    
+    // Main wave particles - blue/cyan particles propagating forward
+    // Create multiple waves at different distances to show propagation
+    for (int wave = 0; wave < 4; ++wave) {
+        float waveDistance = (range / 4.0f) * (wave + 1); // Each wave at 25%, 50%, 75%, 100% of range
+        sf::Vector2f wavePos = position + direction * waveDistance;
+        
+        // Horizontal spread wave (wider spread for visual effect)
+        emitParticles(
+            wavePos,
+            15,                             // count per wave
+            sf::Color(100, 200, 255),      // light blue/cyan
+            200.0f, 400.0f,                // speed (propagating outward)
+            0.15f, 0.3f,                   // short lifetime (quick burst)
+            4.0f, 8.0f,                    // size range
+            baseAngle - 30.0f,             // angle range (spread from direction)
+            baseAngle + 30.0f
+        );
+        
+        // Add some lighter cyan particles for glow effect
+        emitParticles(
+            wavePos,
+            8,                              // count
+            sf::Color(150, 230, 255),      // lighter cyan
+            150.0f, 300.0f,                // speed
+            0.2f, 0.4f,                    // lifetime
+            6.0f, 12.0f,                   // larger size
+            baseAngle - 45.0f,             // wider spread
+            baseAngle + 45.0f
+        );
+    }
+    
+    // Initial burst at player position
+    emitParticles(
+        position,
+        20,                                // count
+        sf::Color(100, 200, 255),         // light blue/cyan
+        300.0f, 500.0f,                   // fast initial burst
+        0.2f, 0.4f,                       // lifetime
+        5.0f, 10.0f,                      // size range
+        baseAngle - 45.0f,                // wide spread from direction
+        baseAngle + 45.0f
+    );
+}
+
 void ParticleSystem::clear() {
     particles.clear();
 }

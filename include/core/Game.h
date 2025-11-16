@@ -2,29 +2,31 @@
 
 #include <SFML/Graphics.hpp>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
-#include "entities/Player.h"
-#include "entities/Enemy.h"
-#include "entities/PatrolEnemy.h"
-#include "entities/Spike.h"
-#include "entities/FlyingEnemy.h"
-#include "world/Platform.h"
-#include "world/Camera.h"
-#include "world/GoalZone.h"
-#include "world/Checkpoint.h"
-#include "world/InteractiveObject.h"
-#include "world/LevelLoader.h"
-#include "ui/GameUI.h"
-#include "effects/ParticleSystem.h"
-#include "effects/CameraShake.h"
-#include "effects/ScreenTransition.h"
-#include "audio/AudioManager.h"
 #include "core/GameState.h"
 #include "core/SaveSystem.h"
-#include "ui/TitleScreen.h"
-#include "ui/PauseMenu.h"
-#include "ui/SettingsMenu.h"
-#include "ui/KeyBindingMenu.h"
+
+// Forward declarations to reduce compile-time coupling
+class Player;
+class Enemy;
+class KineticWaveProjectile;
+class Platform;
+class Camera;
+class GoalZone;
+class Checkpoint;
+class InteractiveObject;
+struct LevelData;
+class GameUI;
+class ParticleSystem;
+class CameraShake;
+class ScreenTransition;
+class AudioManager;
+class TitleScreen;
+class PauseMenu;
+class SettingsMenu;
+class KeyBindingMenu;
 
 class Game {
 public:
@@ -41,6 +43,10 @@ private:
     void handleInput();
     void loadLevel();
     void loadLevel(const std::string& levelPath);
+    void goBackOneLevel();
+    
+    // Background rendering
+    void drawParallaxBackground(sf::RenderWindow& window);
 
     // Helper to get active player
     Player* getActivePlayer() { return activePlayerIndex < players.size() ? players[activePlayerIndex].get() : nullptr; }
@@ -62,13 +68,19 @@ private:
     std::vector<std::unique_ptr<Checkpoint>> checkpoints;
     std::vector<std::unique_ptr<InteractiveObject>> interactiveObjects;
     std::vector<std::unique_ptr<Enemy>> enemies;
+    std::vector<std::unique_ptr<KineticWaveProjectile>> kineticWaveProjectiles;
     std::unique_ptr<Camera> camera;
     std::unique_ptr<GameUI> gameUI;
     std::unique_ptr<GoalZone> goalZone;
 
     // Level system
     std::unique_ptr<LevelData> currentLevel;
+    std::string currentLevelPath;
     std::string activeCheckpointId;
+    std::vector<std::string> levelHistory;
+    int levelHistoryPos = -1;
+    std::unordered_map<std::string, std::string> levelCheckpoints;
+    int pendingSpawnEdge = -1;
 
     // Polish systems
     std::unique_ptr<ParticleSystem> particleSystem;
@@ -86,6 +98,7 @@ private:
     bool levelCompleted;
     bool victoryEffectsTriggered;
     bool isTransitioning;
+    int postTransitionHideFrames = 0;
     std::string nextLevelPath;
     int currentLevelNumber;
     bool secretRoomUnlocked;
@@ -96,9 +109,21 @@ private:
     std::unique_ptr<SettingsMenu> settingsMenu;
     std::unique_ptr<KeyBindingMenu> keyBindingMenu;
 
+    // Background walls
+    sf::Texture* bgWallPlain32;
+    sf::Texture* bgWallCables32;
+    sf::Texture* bgFarTexture;
+    sf::Texture* bgWallPlainVarA32;
+    sf::Texture* bgWallPlainVarB32;
+    sf::Texture* bgWallCablesAlt32;
+    
     // Debug
     sf::Font debugFont;
     sf::Text fpsText;
     float fpsUpdateTime;
     int frameCount;
+
+    // Per-frame input / ability state that used to be static locals in update()
+    bool doorKeyHeld = false;
+    float lastAbilityTimer = 0.0f;
 };

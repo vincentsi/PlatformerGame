@@ -4,6 +4,14 @@
 #include <iostream>
 #include <algorithm>
 
+// Optional: use nlohmann/json if available (header-only, single include)
+#if __has_include(<nlohmann/json.hpp>)
+    #include <nlohmann/json.hpp>
+    #define LEVEL_LOADER_HAS_JSON 1
+#else
+    #define LEVEL_LOADER_HAS_JSON 0
+#endif
+
 // Helper to extract value between quotes or after colon
 std::string extractValue(const std::string& str, const std::string& key) {
     size_t keyPos = str.find("\"" + key + "\"");
@@ -43,6 +51,135 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
     std::string content = buffer.str();
     file.close();
 
+#if LEVEL_LOADER_HAS_JSON
+    // Preferred path: modern, robust JSON parsing via nlohmann/json
+    try {
+        nlohmann::json j = nlohmann::json::parse(content);
+
+        auto levelData = std::make_unique<LevelData>();
+
+        // Basic metadata
+        levelData->name       = j.value("name",      std::string("Loaded Level"));
+        levelData->levelId    = j.value("levelId",   std::string{});
+        levelData->zoneNumber = j.value("zoneNumber", 1);
+        levelData->isBossLevel = j.value("isBossLevel", false);
+        levelData->nextZone   = j.value("nextZone",  std::string{});
+
+        // Level graph: nextLevels (array of strings)
+        if (j.contains("nextLevels") && j["nextLevels"].is_array()) {
+            for (const auto& v : j["nextLevels"]) {
+                if (v.is_string()) {
+                    levelData->nextLevels.push_back(v.get<std::string>());
+                }
+            }
+        }
+
+        // Start position: [x, y]
+        levelData->startPosition = sf::Vector2f(100.0f, 100.0f);
+        if (j.contains("startPosition") && j["startPosition"].is_array() && j["startPosition"].size() >= 2) {
+            float x = j["startPosition"][0].get<float>();
+            float y = j["startPosition"][1].get<float>();
+            levelData->startPosition = sf::Vector2f(x, y);
+        }
+
+        // Platforms
+        if (j.contains("platforms") && j["platforms"].is_array()) {
+            for (const auto& p : j["platforms"]) {
+                if (!p.is_object()) continue;
+                float x = p.value("x", 0.0f);
+                float y = p.value("y", 0.0f);
+                float w = p.value("width", 0.0f);
+                float h = p.value("height", 0.0f);
+                levelData->platforms.push_back(std::make_unique<Platform>(x, y, w, h));
+            }
+        }
+
+        // Checkpoints
+        if (j.contains("checkpoints") && j["checkpoints"].is_array()) {
+            for (const auto& c : j["checkpoints"]) {
+                if (!c.is_object()) continue;
+                float x = c.value("x", 0.0f);
+                float y = c.value("y", 0.0f);
+                std::string id = c.value("id", std::string{});
+                if (!id.empty()) {
+                    levelData->checkpoints.push_back(std::make_unique<Checkpoint>(x, y, id));
+                }
+            }
+        }
+
+        // Interactive objects (doors, terminals, turrets...)
+        if (j.contains("interactiveObjects") && j["interactiveObjects"].is_array()) {
+            for (const auto& io : j["interactiveObjects"]) {
+                if (!io.is_object()) continue;
+                float x = io.value("x", 0.0f);
+                float y = io.value("y", 0.0f);
+                float w = io.value("width", 0.0f);
+                float h = io.value("height", 0.0f);
+                std::string typeStr = io.value("type", std::string{});
+                std::string id = io.value("id", std::string{});
+
+                if (id.empty()) continue;
+
+                InteractiveType type = InteractiveType::Terminal;
+                if (typeStr == "terminal" || typeStr == "Terminal") {
+                    type = InteractiveType::Terminal;
+                } else if (typeStr == "door" || typeStr == "Door") {
+                    type = InteractiveType::Door;
+                } else if (typeStr == "turret" || typeStr == "Turret") {
+                    type = InteractiveType::Turret;
+                }
+
+                levelData->interactiveObjects.push_back(
+                    std::make_unique<InteractiveObject>(x, y, w, h, type, id)
+                );
+            }
+        }
+
+        // Goal zone
+        if (j.contains("goalZone") && j["goalZone"].is_object()) {
+            const auto& g = j["goalZone"];
+            float x = g.value("x", 0.0f);
+            float y = g.value("y", 0.0f);
+            float w = g.value("width", 0.0f);
+            float h = g.value("height", 0.0f);
+            levelData->goalZone = std::make_unique<GoalZone>(x, y, w, h);
+        }
+
+        // Camera zones
+        if (j.contains("cameraZones") && j["cameraZones"].is_array()) {
+            for (const auto& cz : j["cameraZones"]) {
+                if (!cz.is_object()) continue;
+                CameraZone zone{};
+                zone.minX = cz.value("minX", 0.0f);
+                zone.maxX = cz.value("maxX", 0.0f);
+                zone.minY = cz.value("minY", 0.0f);
+                zone.maxY = cz.value("maxY", 0.0f);
+                levelData->cameraZones.push_back(zone);
+            }
+        }
+
+        // Validation (same policy as legacy path)
+        if (levelData->platforms.empty()) {
+            std::cout << "Warning: Level has no platforms. Loading default level.\n";
+            return createDefaultLevel();
+        }
+
+        // Log level load summary (only key info)
+        std::cout << "Level loaded (json): " << levelData->name;
+        if (!levelData->levelId.empty()) {
+            std::cout << " (ID: " << levelData->levelId << ", Zone: " << levelData->zoneNumber << ")";
+        }
+        std::cout << "\n";
+
+        return levelData;
+    } catch (const std::exception& e) {
+        std::cout << "Warning: JSON parse failed for level '" << filepath
+                  << "': " << e.what() << "\n";
+        std::cout << "Falling back to legacy string parser.\n";
+    }
+#endif // LEVEL_LOADER_HAS_JSON
+
+    // Legacy path: manual string parsing (kept as robust fallback)
     auto levelData = std::make_unique<LevelData>();
     levelData->name = "Loaded Level";
     levelData->levelId = "";
@@ -168,27 +305,27 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
             if (platformsEnd < content.length() && bracketDepth == 0) {
                 std::string platformsSection = content.substr(arrayStart, platformsEnd - arrayStart);
 
-                size_t pos = 0;
-                while ((pos = platformsSection.find("{", pos)) != std::string::npos) {
-                    size_t objEnd = platformsSection.find("}", pos);
-                    if (objEnd == std::string::npos) break;
+        size_t pos = 0;
+        while ((pos = platformsSection.find("{", pos)) != std::string::npos) {
+            size_t objEnd = platformsSection.find("}", pos);
+            if (objEnd == std::string::npos) break;
 
-                    std::string obj = platformsSection.substr(pos, objEnd - pos + 1);
+            std::string obj = platformsSection.substr(pos, objEnd - pos + 1);
 
-                    std::string xVal = extractValue(obj, "x");
-                    std::string yVal = extractValue(obj, "y");
-                    std::string wVal = extractValue(obj, "width");
-                    std::string hVal = extractValue(obj, "height");
+            std::string xVal = extractValue(obj, "x");
+            std::string yVal = extractValue(obj, "y");
+            std::string wVal = extractValue(obj, "width");
+            std::string hVal = extractValue(obj, "height");
 
-                    if (!xVal.empty() && !yVal.empty() && !wVal.empty() && !hVal.empty()) {
-                        float x = parseFloat(xVal);
-                        float y = parseFloat(yVal);
-                        float w = parseFloat(wVal);
-                        float h = parseFloat(hVal);
-                        levelData->platforms.push_back(std::make_unique<Platform>(x, y, w, h));
-                    }
+            if (!xVal.empty() && !yVal.empty() && !wVal.empty() && !hVal.empty()) {
+                float x = parseFloat(xVal);
+                float y = parseFloat(yVal);
+                float w = parseFloat(wVal);
+                float h = parseFloat(hVal);
+                levelData->platforms.push_back(std::make_unique<Platform>(x, y, w, h));
+            }
 
-                    pos = objEnd + 1;
+            pos = objEnd + 1;
                 }
             } else {
                 std::cout << "Warning: Could not find end of platforms array\n";

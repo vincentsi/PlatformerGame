@@ -7,7 +7,6 @@
 #include <cstring>
 
 std::string SaveSystem::getSavePath(const std::string& filename) {
-    // Save in the same directory as the executable
     return filename;
 }
 
@@ -20,7 +19,6 @@ bool SaveSystem::save(const SaveData& data, const std::string& filename) {
         return false;
     }
 
-    // Write save file in text format (portable)
     file << "SAVE_VERSION:1\n";
     file << "currentLevel:" << data.currentLevel << "\n";
     file << "totalDeaths:" << data.totalDeaths << "\n";
@@ -51,7 +49,6 @@ bool SaveSystem::load(SaveData& data, const std::string& filename) {
         return false;
     }
 
-    // Reset data to default
     data = SaveData();
 
     std::string line;
@@ -61,7 +58,6 @@ bool SaveSystem::load(SaveData& data, const std::string& filename) {
     while (std::getline(file, line)) {
         if (line.empty()) continue;
 
-        // Check for version
         if (line.find("SAVE_VERSION:") == 0) {
             version = std::stoi(line.substr(13));
             validFormat = true;
@@ -70,7 +66,6 @@ bool SaveSystem::load(SaveData& data, const std::string& filename) {
 
         if (line == "END") break;
 
-        // Parse key:value pairs
         size_t colonPos = line.find(':');
         if (colonPos == std::string::npos) continue;
 
@@ -108,7 +103,6 @@ bool SaveSystem::load(SaveData& data, const std::string& filename) {
             } else if (key == "checkpointY") {
                 data.checkpointY = std::stof(value);
             } else if (key == "levelsCompleted") {
-                // Parse comma-separated values
                 std::stringstream ss(value);
                 std::string token;
                 int index = 0;
@@ -119,7 +113,6 @@ bool SaveSystem::load(SaveData& data, const std::string& filename) {
             }
         } catch (const std::exception& e) {
             Logger::warning("Error parsing save data key '" + key + "': " + e.what());
-            // Continue parsing other keys
         }
     }
 
@@ -130,7 +123,6 @@ bool SaveSystem::load(SaveData& data, const std::string& filename) {
         return false;
     }
 
-    // Final validation of loaded data (double-check after parsing)
     if (data.currentLevel < 1) {
         Logger::warning("Invalid currentLevel in save, resetting to 1");
         data.currentLevel = 1;
