@@ -1,4 +1,7 @@
 #include "world/LevelLoader.h"
+#include "entities/PatrolEnemy.h"
+#include "entities/FlyingEnemy.h"
+#include "entities/Spike.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -27,12 +30,20 @@ std::string extractValue(const std::string& str, const std::string& key) {
     if (valueEnd == std::string::npos) valueEnd = str.length();
 
     std::string value = str.substr(valueStart, valueEnd - valueStart);
-    // Remove quotes if present
-    if (!value.empty() && value.front() == '"') {
+    // Remove quotes if present (can be at start, end, or both)
+    while (!value.empty() && (value.front() == '"' || value.front() == '\'')) {
         value = value.substr(1);
-        if (!value.empty() && value.back() == '"') {
+    }
+    while (!value.empty() && (value.back() == '"' || value.back() == '\'' || value.back() == ' ' || value.back() == '\t')) {
             value = value.substr(0, value.length() - 1);
         }
+    // Trim whitespace
+    size_t first = value.find_first_not_of(" \t\r\n");
+    if (first != std::string::npos) {
+        size_t last = value.find_last_not_of(" \t\r\n");
+        value = value.substr(first, last - first + 1);
+    } else {
+        value = "";
     }
     return value;
 }
@@ -90,7 +101,15 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
                 float y = p.value("y", 0.0f);
                 float w = p.value("width", 0.0f);
                 float h = p.value("height", 0.0f);
-                levelData->platforms.push_back(std::make_unique<Platform>(x, y, w, h));
+                std::string typeStr = p.value("type", std::string("floor"));
+                Platform::Type type = Platform::Type::Floor;
+                if (typeStr == "endfloor") {
+                    type = Platform::Type::EndFloor;
+                    std::cout << "Chargement plateforme avec type: endfloor\n";
+                } else {
+                    std::cout << "Chargement plateforme avec type: floor (typeStr=" << typeStr << ")\n";
+                }
+                levelData->platforms.push_back(std::make_unique<Platform>(x, y, w, h, type));
             }
         }
 
@@ -155,6 +174,27 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
                 zone.minY = cz.value("minY", 0.0f);
                 zone.maxY = cz.value("maxY", 0.0f);
                 levelData->cameraZones.push_back(zone);
+            }
+        }
+
+        // Enemies
+        if (j.contains("enemies") && j["enemies"].is_array()) {
+            for (const auto& e : j["enemies"]) {
+                if (!e.is_object()) continue;
+                float x = e.value("x", 0.0f);
+                float y = e.value("y", 0.0f);
+                std::string typeStr = e.value("type", std::string("patrol"));
+                
+                if (typeStr == "patrol") {
+                    float patrolDistance = e.value("patrolDistance", 100.0f);
+                    levelData->enemies.push_back(std::make_unique<PatrolEnemy>(x, y, patrolDistance));
+                } else if (typeStr == "flying") {
+                    float patrolDistance = e.value("patrolDistance", 200.0f);
+                    bool horizontalPatrol = e.value("horizontalPatrol", true);
+                    levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol));
+                } else if (typeStr == "spike") {
+                    levelData->enemies.push_back(std::make_unique<Spike>(x, y));
+                }
             }
         }
 
@@ -316,13 +356,21 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
             std::string yVal = extractValue(obj, "y");
             std::string wVal = extractValue(obj, "width");
             std::string hVal = extractValue(obj, "height");
+            std::string typeVal = extractValue(obj, "type");
 
             if (!xVal.empty() && !yVal.empty() && !wVal.empty() && !hVal.empty()) {
                 float x = parseFloat(xVal);
                 float y = parseFloat(yVal);
                 float w = parseFloat(wVal);
                 float h = parseFloat(hVal);
-                levelData->platforms.push_back(std::make_unique<Platform>(x, y, w, h));
+                Platform::Type type = Platform::Type::Floor;
+                if (typeVal == "endfloor") {
+                    type = Platform::Type::EndFloor;
+                    std::cout << "Chargement plateforme (fallback) avec type: endfloor\n";
+                } else {
+                    std::cout << "Chargement plateforme (fallback) avec type: floor (typeVal=" << typeVal << ")\n";
+                }
+                levelData->platforms.push_back(std::make_unique<Platform>(x, y, w, h, type));
             }
 
             pos = objEnd + 1;
@@ -407,6 +455,58 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
             }
 
             pos = objEnd + 1;
+        }
+    }
+
+    // Parse enemies
+    size_t enemiesStart = content.find("\"enemies\"");
+    if (enemiesStart != std::string::npos) {
+        size_t arrayStart = content.find("[", enemiesStart);
+        if (arrayStart != std::string::npos) {
+            int bracketDepth = 1;
+            size_t enemiesEnd = arrayStart + 1;
+            while (enemiesEnd < content.length() && bracketDepth > 0) {
+                if (content[enemiesEnd] == '[') bracketDepth++;
+                else if (content[enemiesEnd] == ']') bracketDepth--;
+                if (bracketDepth > 0) enemiesEnd++;
+            }
+            
+            if (enemiesEnd < content.length() && bracketDepth == 0) {
+                std::string enemiesSection = content.substr(arrayStart, enemiesEnd - arrayStart);
+                
+                size_t pos = 0;
+                while ((pos = enemiesSection.find("{", pos)) != std::string::npos) {
+                    size_t objEnd = enemiesSection.find("}", pos);
+                    if (objEnd == std::string::npos) break;
+                    
+                    std::string obj = enemiesSection.substr(pos, objEnd - pos + 1);
+                    
+                    std::string typeVal = extractValue(obj, "type");
+                    std::string xVal = extractValue(obj, "x");
+                    std::string yVal = extractValue(obj, "y");
+                    
+                    if (!typeVal.empty() && !xVal.empty() && !yVal.empty()) {
+                        float x = parseFloat(xVal);
+                        float y = parseFloat(yVal);
+                        
+                        if (typeVal == "patrol") {
+                            std::string patrolDistVal = extractValue(obj, "patrolDistance");
+                            float patrolDistance = patrolDistVal.empty() ? 100.0f : parseFloat(patrolDistVal);
+                            levelData->enemies.push_back(std::make_unique<PatrolEnemy>(x, y, patrolDistance));
+                        } else if (typeVal == "flying") {
+                            std::string patrolDistVal = extractValue(obj, "patrolDistance");
+                            float patrolDistance = patrolDistVal.empty() ? 200.0f : parseFloat(patrolDistVal);
+                            std::string horizontalVal = extractValue(obj, "horizontalPatrol");
+                            bool horizontalPatrol = (horizontalVal == "true" || horizontalVal == "1");
+                            levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol));
+                        } else if (typeVal == "spike") {
+                            levelData->enemies.push_back(std::make_unique<Spike>(x, y));
+                        }
+                    }
+                    
+                    pos = objEnd + 1;
+                }
+            }
         }
     }
 

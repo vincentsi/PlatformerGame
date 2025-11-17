@@ -15,7 +15,7 @@ Spike::Spike(float x, float y)
     size = sf::Vector2f(30.0f, 30.0f);
 }
 
-void Spike::update(float dt) {
+void Spike::update(float /*dt*/) {
     // Stationary enemy - no movement, just exists as a hazard
     // Shape position is already set in constructor
     // Nothing to update

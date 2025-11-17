@@ -1132,7 +1132,7 @@ void Player::updateAnimation(float dt) {
         // For jump animations, sync frame with velocity.y (height of jump)
         // Negative velocity = going up, positive = going down
         if (!currentAnimationTextures.empty()) {
-            int totalFrames = currentAnimationTextures.size();
+            int totalFrames = static_cast<int>(currentAnimationTextures.size());
             
             // Map velocity to frame: 
             // High negative (ascending) -> early frames (0-2)

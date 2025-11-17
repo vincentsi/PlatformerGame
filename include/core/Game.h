@@ -128,8 +128,17 @@ private:
     float lastAbilityTimer = 0.0f;
 
     // Editor mode
+    enum class EditorObjectType {
+        Platform,
+        PatrolEnemy,
+        FlyingEnemy,
+        Spike
+    };
+    EditorObjectType editorObjectType = EditorObjectType::Platform;
     int selectedPlatformIndex = -1;
+    int selectedEnemyIndex = -1;
     bool isDraggingPlatform = false;
+    bool isDraggingEnemy = false;
     sf::Vector2f dragOffset;
     sf::Font editorFont;
     sf::Text editorText;

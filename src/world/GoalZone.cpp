@@ -18,7 +18,7 @@ void GoalZone::update(float dt) {
 
     // Pulsing alpha between 100 and 220
     int alpha = static_cast<int>(160 + 60 * std::sin(animationTime));
-    shape.setFillColor(sf::Color(255, 215, 0, alpha));
+    shape.setFillColor(sf::Color(255, 215, 0, static_cast<sf::Uint8>(alpha)));
 }
 
 void GoalZone::draw(sf::RenderWindow& window) {

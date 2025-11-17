@@ -9,6 +9,9 @@
 #include "world/InteractiveObject.h"
 #include <SFML/Graphics.hpp>
 
+// Forward declarations
+class Enemy;
+
 struct CameraZone {
     float minX, maxX;
     float minY, maxY;
@@ -25,6 +28,7 @@ struct LevelData {
     std::vector<std::unique_ptr<Platform>> platforms;
     std::vector<std::unique_ptr<Checkpoint>> checkpoints;
     std::vector<std::unique_ptr<InteractiveObject>> interactiveObjects;
+    std::vector<std::unique_ptr<Enemy>> enemies;
     std::unique_ptr<GoalZone> goalZone;
     std::vector<CameraZone> cameraZones;
 };

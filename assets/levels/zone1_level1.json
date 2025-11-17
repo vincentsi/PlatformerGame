@@ -8,11 +8,12 @@
   "startPosition": [100, 520],
 
   "platforms": [
-    { "x": -50, "y": 0, "width": 50, "height": 600 },
-    { "x": 0, "y": 550, "width": 1230, "height": 50 },
-    { "x": 450, "y": 0, "width": 50, "height": 480 },
-    { "x": 0, "y": 0, "width": 500, "height": 300 },
-    { "x": 500, "y": 0, "width": 800, "height": 300 }
+    { "x": -50, "y": 0, "width": 50, "height": 600, "type": "floor" },
+    { "x": 0, "y": 550, "width": 1280, "height": 50, "type": "floor" },
+    { "x": 450, "y": 0, "width": 50, "height": 480, "type": "floor" },
+    { "x": 0, "y": 0, "width": 500, "height": 300, "type": "floor" },
+    { "x": 500, "y": 0, "width": 800, "height": 300, "type": "floor" },
+    { "x": 0, "y": 592, "width": 1280, "height": 140, "type": "endfloor" }
   ],
 
   "checkpoints": [{ "x": 100, "y": 500, "id": "cp_lab_start" }],
@@ -20,6 +21,12 @@
   "interactiveObjects": [],
 
   "cameraZones": [{ "minX": 0, "maxX": 1210, "minY": 0, "maxY": 600 }],
+  "enemies": [
+    { "type": "patrol", "x": 882, "y": 525, "patrolDistance": 140 },
+    { "type": "flying", "x": 893, "y": 405, "patrolDistance": 760, "horizontalPatrol": true },
+    { "type": "spike", "x": 1097, "y": 528 },
+    { "type": "spike", "x": 994, "y": 528 }
+  ],
 
   "goalZone": { "x": 0, "y": 0, "width": 0, "height": 0 }
 }

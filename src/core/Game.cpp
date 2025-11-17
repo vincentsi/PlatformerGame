@@ -131,7 +131,7 @@ Game::Game()
     InputConfig::getInstance().loadFromFile();
     
     // Initialize platform tileset
-    Platform::initTileset();
+    Platform::initTilesets();
 
     // Check for existing save
     titleScreen->setCanContinue(SaveSystem::saveExists());
@@ -231,27 +231,72 @@ void Game::processEvents() {
                 sf::Vector2f worldPos = screenToWorld(sf::Vector2f(static_cast<float>(mousePixelPos.x), static_cast<float>(mousePixelPos.y)));
 
                 if (event.mouseButton.button == sf::Mouse::Left) {
-                    // Check if clicking on existing platform
-                    bool clickedPlatform = false;
-                    for (size_t i = 0; i < platforms.size(); ++i) {
-                        sf::FloatRect bounds = platforms[i]->getBounds();
-                        if (bounds.contains(worldPos)) {
-                            selectedPlatformIndex = static_cast<int>(i);
+                    // Check if clicking on existing object
+                    bool clickedObject = false;
+                    
+                    // Check platforms first
+                    if (editorObjectType == EditorObjectType::Platform) {
+                        for (size_t i = 0; i < platforms.size(); ++i) {
+                            sf::FloatRect bounds = platforms[i]->getBounds();
+                            if (bounds.contains(worldPos)) {
+                                selectedPlatformIndex = static_cast<int>(i);
+                                selectedEnemyIndex = -1;
+                                isDraggingPlatform = true;
+                                isDraggingEnemy = false;
+                                dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
+                                clickedObject = true;
+                                break;
+                            }
+                        }
+                        // If not clicking on platform, create new one
+                        if (!clickedObject) {
+                            platforms.push_back(std::make_unique<Platform>(worldPos.x, worldPos.y, 100.0f, 20.0f, Platform::Type::Floor));
+                            selectedPlatformIndex = static_cast<int>(platforms.size() - 1);
+                            selectedEnemyIndex = -1;
                             isDraggingPlatform = true;
-                            dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
-                            clickedPlatform = true;
-                            break;
+                            isDraggingEnemy = false;
+                            dragOffset = sf::Vector2f(0, 0);
+                        }
+                    } else {
+                        // Check enemies
+                        for (size_t i = 0; i < enemies.size(); ++i) {
+                            sf::FloatRect bounds = enemies[i]->getBounds();
+                            if (bounds.contains(worldPos)) {
+                                selectedEnemyIndex = static_cast<int>(i);
+                                selectedPlatformIndex = -1;
+                                isDraggingEnemy = true;
+                                isDraggingPlatform = false;
+                                dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
+                                clickedObject = true;
+                                break;
+                            }
+                        }
+                        // If not clicking on enemy, create new one based on editorObjectType
+                        if (!clickedObject) {
+                            switch (editorObjectType) {
+                                case EditorObjectType::PatrolEnemy:
+                                    enemies.push_back(std::make_unique<PatrolEnemy>(worldPos.x, worldPos.y, 100.0f));
+                                    break;
+                                case EditorObjectType::FlyingEnemy:
+                                    enemies.push_back(std::make_unique<FlyingEnemy>(worldPos.x, worldPos.y, 200.0f, true));
+                                    break;
+                                case EditorObjectType::Spike:
+                                    enemies.push_back(std::make_unique<Spike>(worldPos.x, worldPos.y));
+                                    break;
+                                default:
+                                    break;
+                            }
+                            selectedEnemyIndex = static_cast<int>(enemies.size() - 1);
+                            selectedPlatformIndex = -1;
+                            isDraggingEnemy = true;
+                            isDraggingPlatform = false;
+                            dragOffset = sf::Vector2f(0, 0);
                         }
                     }
-                    // If not clicking on platform, create new one
-                    if (!clickedPlatform) {
-                        platforms.push_back(std::make_unique<Platform>(worldPos.x, worldPos.y, 100.0f, 20.0f));
-                        selectedPlatformIndex = static_cast<int>(platforms.size() - 1);
-                        isDraggingPlatform = true;
-                        dragOffset = sf::Vector2f(0, 0);
-                    }
                 } else if (event.mouseButton.button == sf::Mouse::Right) {
-                    // Delete platform under cursor
+                    // Delete object under cursor
+                    bool deleted = false;
+                    // Check platforms
                     for (size_t i = 0; i < platforms.size(); ++i) {
                         sf::FloatRect bounds = platforms[i]->getBounds();
                         if (bounds.contains(worldPos)) {
@@ -261,7 +306,23 @@ void Game::processEvents() {
                             } else if (selectedPlatformIndex > static_cast<int>(i)) {
                                 selectedPlatformIndex--;
                             }
+                            deleted = true;
                             break;
+                        }
+                    }
+                    // Check enemies if platform not deleted
+                    if (!deleted) {
+                        for (size_t i = 0; i < enemies.size(); ++i) {
+                            sf::FloatRect bounds = enemies[i]->getBounds();
+                            if (bounds.contains(worldPos)) {
+                                enemies.erase(enemies.begin() + i);
+                                if (selectedEnemyIndex == static_cast<int>(i)) {
+                                    selectedEnemyIndex = -1;
+                                } else if (selectedEnemyIndex > static_cast<int>(i)) {
+                                    selectedEnemyIndex--;
+                                }
+                                break;
+                            }
                         }
                     }
                 }
@@ -270,6 +331,24 @@ void Game::processEvents() {
             if (event.type == sf::Event::MouseButtonReleased) {
                 if (event.mouseButton.button == sf::Mouse::Left) {
                     isDraggingPlatform = false;
+                    isDraggingEnemy = false;
+                }
+            }
+            
+            // Change object type with number keys
+            if (event.type == sf::Event::KeyPressed) {
+                if (event.key.code == sf::Keyboard::Num1) {
+                    editorObjectType = EditorObjectType::Platform;
+                    selectedEnemyIndex = -1;
+                } else if (event.key.code == sf::Keyboard::Num2) {
+                    editorObjectType = EditorObjectType::PatrolEnemy;
+                    selectedPlatformIndex = -1;
+                } else if (event.key.code == sf::Keyboard::Num3) {
+                    editorObjectType = EditorObjectType::FlyingEnemy;
+                    selectedPlatformIndex = -1;
+                } else if (event.key.code == sf::Keyboard::Num4) {
+                    editorObjectType = EditorObjectType::Spike;
+                    selectedPlatformIndex = -1;
                 }
             }
 
@@ -280,11 +359,14 @@ void Game::processEvents() {
                 saveLevelToFile();
             }
 
-            // Delete selected platform with Delete key
+            // Delete selected object with Delete key
             if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Delete) {
                 if (selectedPlatformIndex >= 0 && selectedPlatformIndex < static_cast<int>(platforms.size())) {
                     platforms.erase(platforms.begin() + selectedPlatformIndex);
                     selectedPlatformIndex = -1;
+                } else if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(enemies.size())) {
+                    enemies.erase(enemies.begin() + selectedEnemyIndex);
+                    selectedEnemyIndex = -1;
                 }
             }
             // Reload level from file (F5)
@@ -292,7 +374,59 @@ void Game::processEvents() {
                 if (!currentLevelPath.empty()) {
                     loadLevel(currentLevelPath);
                     selectedPlatformIndex = -1;
+                    selectedEnemyIndex = -1;
                     isDraggingPlatform = false;
+                    isDraggingEnemy = false;
+                }
+            }
+            // Change platform type with T key
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::T) {
+                if (selectedPlatformIndex >= 0 && selectedPlatformIndex < static_cast<int>(platforms.size())) {
+                    // Cycle through platform types
+                    Platform::Type currentType = platforms[selectedPlatformIndex]->getType();
+                    Platform::Type nextType;
+                    switch (currentType) {
+                        case Platform::Type::Floor: nextType = Platform::Type::EndFloor; break;
+                        case Platform::Type::EndFloor: nextType = Platform::Type::Floor; break;
+                        default: nextType = Platform::Type::Floor; break;
+                    }
+                    platforms[selectedPlatformIndex]->setType(nextType);
+                    std::cout << "Type de plateforme change\n";
+                }
+            }
+            
+            // Resize platform with +/- keys
+            if (event.type == sf::Event::KeyPressed && selectedPlatformIndex >= 0 && selectedPlatformIndex < static_cast<int>(platforms.size())) {
+                sf::Vector2f currentSize = platforms[selectedPlatformIndex]->getSize();
+                float resizeStep = 10.0f;
+                
+                if (event.key.code == sf::Keyboard::Add || event.key.code == sf::Keyboard::Equal) {
+                    // Increase width
+                    platforms[selectedPlatformIndex]->setSize(currentSize.x + resizeStep, currentSize.y);
+                } else if (event.key.code == sf::Keyboard::Subtract || event.key.code == sf::Keyboard::Hyphen) {
+                    // Decrease width
+                    platforms[selectedPlatformIndex]->setSize(std::max(10.0f, currentSize.x - resizeStep), currentSize.y);
+                } else if (event.key.code == sf::Keyboard::PageUp) {
+                    // Increase height
+                    platforms[selectedPlatformIndex]->setSize(currentSize.x, currentSize.y + resizeStep);
+                } else if (event.key.code == sf::Keyboard::PageDown) {
+                    // Decrease height
+                    platforms[selectedPlatformIndex]->setSize(currentSize.x, std::max(10.0f, currentSize.y - resizeStep));
+                }
+            }
+            
+            // Modify enemy patrol distance with Q/W keys
+            if (event.type == sf::Event::KeyPressed && selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(enemies.size())) {
+                Enemy* enemy = enemies[selectedEnemyIndex].get();
+                float currentDistance = enemy->getPatrolDistance();
+                float distanceStep = 20.0f;
+                
+                if (event.key.code == sf::Keyboard::Q) {
+                    // Decrease patrol distance
+                    enemy->setPatrolDistance(std::max(20.0f, currentDistance - distanceStep));
+                } else if (event.key.code == sf::Keyboard::W) {
+                    // Increase patrol distance
+                    enemy->setPatrolDistance(currentDistance + distanceStep);
                 }
             }
         }
@@ -659,7 +793,7 @@ void Game::update(float dt) {
             );
         }
         lastAbilityTimer = abilityTimer;
-
+        
         // Reset tracking when ability ends
         if (abilityTimer <= 0.0f) {
             lastAbilityTimer = 0.0f;
@@ -685,15 +819,15 @@ void Game::update(float dt) {
         const int cy = static_cast<int>(std::floor(enemyPos.y / cellSize));
         enemyGrid[makeCellKey(cx, cy)].push_back(enemyPtr.get());
     }
-
+    
     // Update Kinetic Wave projectiles
     for (auto& projectile : kineticWaveProjectiles) {
         if (!projectile || !projectile->isAlive()) {
             continue;
         }
 
-        projectile->update(dt);
-
+            projectile->update(dt);
+            
         // Broad phase: only test enemies in neighboring grid cells
         const sf::Vector2f& projectilePos = projectile->getPosition();
         const int pcx = static_cast<int>(std::floor(projectilePos.x / cellSize));
@@ -707,31 +841,31 @@ void Game::update(float dt) {
                 }
 
                 for (Enemy* enemy : it->second) {
-                    if (!enemy || !enemy->isAlive()) {
-                        continue;
-                    }
-
+                if (!enemy || !enemy->isAlive()) {
+                    continue;
+                }
+                
                     const sf::Vector2f& enemyPos = enemy->getPosition();
-                    sf::Vector2f toEnemy = enemyPos - projectilePos;
-                    float distance = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
-
-                    // Check collision (projectile radius ~15px, enemy hitbox)
-                    if (distance < 40.0f) { // Slightly larger collision radius
-                        // Push enemy away with force
+                sf::Vector2f toEnemy = enemyPos - projectilePos;
+                float distance = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
+                
+                // Check collision (projectile radius ~15px, enemy hitbox)
+                if (distance < 40.0f) { // Slightly larger collision radius
+                    // Push enemy away with force
                         sf::Vector2f dirToEnemy = (distance > 0.0f)
                             ? sf::Vector2f(toEnemy.x / distance, toEnemy.y / distance)
                             : sf::Vector2f(1.0f, 0.0f);
-                        sf::Vector2f pushForce = dirToEnemy * Config::KINETIC_WAVE_FORCE;
-                        enemy->setVelocity(pushForce.x, pushForce.y);
-
-                        // Visual effect at enemy position (impact)
-                        particleSystem->emitJump(enemyPos);
-                        audioManager->playSound("jump", 60.0f);
-                        cameraShake->shakeLight();
-
-                        // Mark projectile as dead after hitting enemy
-                        // (we'll add a hit flag later if needed to continue through enemies)
-                    }
+                    sf::Vector2f pushForce = dirToEnemy * Config::KINETIC_WAVE_FORCE;
+                    enemy->setVelocity(pushForce.x, pushForce.y);
+                    
+                    // Visual effect at enemy position (impact)
+                    particleSystem->emitJump(enemyPos);
+                    audioManager->playSound("jump", 60.0f);
+                    cameraShake->shakeLight();
+                    
+                    // Mark projectile as dead after hitting enemy
+                    // (we'll add a hit flag later if needed to continue through enemies)
+                }
                 }
             }
         }
@@ -1040,69 +1174,10 @@ void Game::loadLevel(const std::string& levelPath) {
             interactiveObjects = std::move(currentLevel->interactiveObjects);
             goalZone = std::move(currentLevel->goalZone);
 
-        // Clear enemies and projectiles, then add level-specific enemies
-        enemies.clear();
+            // Load enemies from JSON
+            enemies = std::move(currentLevel->enemies);
+            
         kineticWaveProjectiles.clear();
-        
-        // Zone 1 Level 1: Laboratoire - Premier monstre volant
-        if (currentLevel->levelId == "zone1_level1") {
-            // Flying enemy horizontal (de gauche à droite) au-dessus de la plateforme
-            // Position: au-dessus de la plateforme à y=400, patrouille horizontalement
-            enemies.push_back(std::make_unique<FlyingEnemy>(600.0f, 400.0f, 800.0f, true));
-        }
-
-        // Zone 1 Level 2: Couloir - Ennemis et pièges denses (style Dead Cells)
-        if (currentLevel->levelId == "zone1_level2") {
-            // Ennemis patrouilleurs sur les plateformes (densité élevée)
-            enemies.push_back(std::make_unique<PatrolEnemy>(300.0f, 230.0f, 80.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(550.0f, 470.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(600.0f, 80.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(800.0f, 420.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(1100.0f, 70.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(1200.0f, 320.0f, 120.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(1500.0f, 190.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(1800.0f, 220.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(1900.0f, 150.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(2300.0f, 120.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(2600.0f, 80.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(3100.0f, 170.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(3300.0f, 30.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(3600.0f, 270.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(3700.0f, 110.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(4100.0f, 370.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(4050.0f, 50.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(4500.0f, 80.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(4700.0f, 180.0f, 100.0f));
-            enemies.push_back(std::make_unique<PatrolEnemy>(5000.0f, 330.0f, 100.0f));
-
-            // Flying enemies pour la verticalité
-            enemies.push_back(std::make_unique<FlyingEnemy>(700.0f, 300.0f, 200.0f, true));
-            enemies.push_back(std::make_unique<FlyingEnemy>(1600.0f, 200.0f, 200.0f, true));
-            enemies.push_back(std::make_unique<FlyingEnemy>(2800.0f, 100.0f, 200.0f, true));
-            enemies.push_back(std::make_unique<FlyingEnemy>(3900.0f, 200.0f, 200.0f, true));
-            enemies.push_back(std::make_unique<FlyingEnemy>(4800.0f, 300.0f, 200.0f, true));
-
-            // Pièges (spikes) stratégiquement placés partout
-            enemies.push_back(std::make_unique<Spike>(400.0f, 530.0f));
-            enemies.push_back(std::make_unique<Spike>(650.0f, 480.0f));
-            enemies.push_back(std::make_unique<Spike>(900.0f, 430.0f));
-            enemies.push_back(std::make_unique<Spike>(1100.0f, 380.0f));
-            enemies.push_back(std::make_unique<Spike>(1300.0f, 330.0f));
-            enemies.push_back(std::make_unique<Spike>(1600.0f, 280.0f));
-            enemies.push_back(std::make_unique<Spike>(1950.0f, 230.0f));
-            enemies.push_back(std::make_unique<Spike>(2200.0f, 180.0f));
-            enemies.push_back(std::make_unique<Spike>(2500.0f, 80.0f));
-            enemies.push_back(std::make_unique<Spike>(2750.0f, 80.0f));
-            enemies.push_back(std::make_unique<Spike>(3100.0f, 180.0f));
-            enemies.push_back(std::make_unique<Spike>(3400.0f, 230.0f));
-            enemies.push_back(std::make_unique<Spike>(3500.0f, 230.0f));
-            enemies.push_back(std::make_unique<Spike>(3800.0f, 330.0f));
-            enemies.push_back(std::make_unique<Spike>(4000.0f, 380.0f));
-            enemies.push_back(std::make_unique<Spike>(4300.0f, 430.0f));
-            enemies.push_back(std::make_unique<Spike>(4600.0f, 130.0f));
-            enemies.push_back(std::make_unique<Spike>(4900.0f, 280.0f));
-            enemies.push_back(std::make_unique<Spike>(5100.0f, 380.0f));
-        }
 
         // Reset all players to level start position (or edge spawn if requested)
         if (!players.empty()) {
@@ -1467,6 +1542,23 @@ void Game::updateEditor(float dt) {
         sf::FloatRect bounds = platforms[selectedPlatformIndex]->getBounds();
         platforms[selectedPlatformIndex]->setPosition(worldPos.x - dragOffset.x, worldPos.y - dragOffset.y);
     }
+    
+    if (isDraggingEnemy && selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(enemies.size())) {
+        sf::Vector2i mousePixelPos = sf::Mouse::getPosition(window);
+        sf::Vector2f worldPos = screenToWorld(sf::Vector2f(static_cast<float>(mousePixelPos.x), static_cast<float>(mousePixelPos.y)));
+        
+        Enemy* enemy = enemies[selectedEnemyIndex].get();
+        sf::Vector2f oldPos = enemy->getPosition();
+        enemy->setPosition(worldPos.x - dragOffset.x, worldPos.y - dragOffset.y);
+        
+        // Update patrol bounds to follow the enemy position
+        sf::Vector2f newPos = enemy->getPosition();
+        float distanceX = newPos.x - oldPos.x;
+        float currentDistance = enemy->getPatrolDistance();
+        float centerX = (enemy->getLeftBound() + enemy->getRightBound()) / 2.0f;
+        float newCenterX = centerX + distanceX;
+        enemy->setPatrolBounds(newCenterX - currentDistance / 2.0f, newCenterX + currentDistance / 2.0f);
+    }
 
     // Camera movement with arrow keys (move player to move camera)
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) {
@@ -1529,6 +1621,66 @@ void Game::renderEditor() {
             window.draw(indexText);
         }
     }
+    
+    // Draw enemies
+    for (size_t i = 0; i < enemies.size(); ++i) {
+        enemies[i]->draw(window);
+        
+        Enemy* enemy = enemies[i].get();
+        
+        // Draw patrol zone for patrol and flying enemies
+        if (enemy->getType() == EnemyType::Patrol || enemy->getType() == EnemyType::Flying) {
+            float leftBound = enemy->getLeftBound();
+            float rightBound = enemy->getRightBound();
+            sf::Vector2f pos = enemy->getPosition();
+            
+            // Draw patrol zone as a line
+            sf::RectangleShape patrolLine;
+            patrolLine.setSize(sf::Vector2f(rightBound - leftBound, 2.0f));
+            patrolLine.setPosition(leftBound, pos.y - 40.0f);
+            patrolLine.setFillColor(sf::Color(255, 255, 0, 100)); // Yellow, semi-transparent
+            window.draw(patrolLine);
+            
+            // Draw bounds markers
+            sf::CircleShape leftMarker(3.0f);
+            leftMarker.setPosition(leftBound - 3.0f, pos.y - 41.0f);
+            leftMarker.setFillColor(sf::Color::Yellow);
+            window.draw(leftMarker);
+            
+            sf::CircleShape rightMarker(3.0f);
+            rightMarker.setPosition(rightBound - 3.0f, pos.y - 41.0f);
+            rightMarker.setFillColor(sf::Color::Yellow);
+            window.draw(rightMarker);
+        }
+        
+        // Highlight selected enemy
+        if (static_cast<int>(i) == selectedEnemyIndex) {
+            sf::FloatRect bounds = enemies[i]->getBounds();
+            sf::RectangleShape outline;
+            outline.setSize(sf::Vector2f(bounds.width, bounds.height));
+            outline.setPosition(bounds.left, bounds.top);
+            outline.setFillColor(sf::Color::Transparent);
+            outline.setOutlineColor(sf::Color::Cyan);
+            outline.setOutlineThickness(2.0f);
+            window.draw(outline);
+        }
+        
+        // Draw enemy index and patrol distance
+        if (editorFont.getInfo().family != "") {
+            sf::Text indexText;
+            indexText.setFont(editorFont);
+            std::string info = "E" + std::to_string(i);
+            if (enemy->getType() == EnemyType::Patrol || enemy->getType() == EnemyType::Flying) {
+                info += " (" + std::to_string(static_cast<int>(enemy->getPatrolDistance())) + ")";
+            }
+            indexText.setString(info);
+            indexText.setCharacterSize(12);
+            indexText.setFillColor(sf::Color::Cyan);
+            sf::FloatRect bounds = enemies[i]->getBounds();
+            indexText.setPosition(bounds.left + bounds.width / 2.0f - 20.0f, bounds.top - 15.0f);
+            window.draw(indexText);
+        }
+    }
 
     // Draw checkpoints
     for (auto& checkpoint : checkpoints) {
@@ -1546,18 +1698,37 @@ void Game::renderEditor() {
     if (editorFont.getInfo().family != "") {
         editorText.setFont(editorFont);
         editorText.setCharacterSize(16);
-        editorText.setFillColor(sf::Color::White);
+        editorText.setFillColor(sf::Color::Black);
         editorText.setPosition(10.0f, 10.0f);
+        
+        std::string objectTypeStr = "Platform";
+        switch (editorObjectType) {
+            case EditorObjectType::Platform: objectTypeStr = "Platform"; break;
+            case EditorObjectType::PatrolEnemy: objectTypeStr = "PatrolEnemy"; break;
+            case EditorObjectType::FlyingEnemy: objectTypeStr = "FlyingEnemy"; break;
+            case EditorObjectType::Spike: objectTypeStr = "Spike"; break;
+        }
         
         std::string info = "MODE EDITEUR\n";
         info += "F1: Toggle Editor\n";
-        info += "Clic Gauche: Placer/Selectionner plateforme\n";
-        info += "Clic Droit: Supprimer plateforme\n";
+        info += "1-4: Type objet (" + objectTypeStr + ")\n";
+        info += "Clic Gauche: Placer/Selectionner\n";
+        info += "Clic Droit: Supprimer\n";
         info += "Delete: Supprimer selectionnee\n";
-        info += "Ctrl+S: Sauvegarder et recharger\n";
+        info += "Ctrl+S: Sauvegarder\n";
         info += "F5: Recharger depuis fichier\n";
         info += "Fleches: Deplacer camera\n";
-        info += "Plateformes: " + std::to_string(platforms.size());
+        info += "+/-: Largeur plateforme\n";
+        info += "PageUp/Down: Hauteur plateforme\n";
+        info += "T: Changer type plateforme\n";
+        if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(enemies.size())) {
+            Enemy* enemy = enemies[selectedEnemyIndex].get();
+            if (enemy->getType() == EnemyType::Patrol || enemy->getType() == EnemyType::Flying) {
+                info += "Q/W: Distance patrouille (" + std::to_string(static_cast<int>(enemy->getPatrolDistance())) + ")\n";
+            }
+        }
+        info += "Plateformes: " + std::to_string(platforms.size()) + "\n";
+        info += "Ennemis: " + std::to_string(enemies.size());
         
         editorText.setString(info);
         window.draw(editorText);
@@ -1670,14 +1841,48 @@ void Game::saveLevelToFile() {
 
     // Update platforms array
     j["platforms"] = nlohmann::json::array();
-    for (const auto& platform : platforms) {
+    for (size_t i = 0; i < platforms.size(); ++i) {
+        const auto& platform = platforms[i];
         sf::FloatRect bounds = platform->getBounds();
         nlohmann::json p;
         p["x"] = bounds.left;
         p["y"] = bounds.top;
         p["width"] = bounds.width;
         p["height"] = bounds.height;
+        // Save platform type
+        std::string typeStr = "floor";
+        Platform::Type currentType = platform->getType();
+        switch (currentType) {
+            case Platform::Type::Floor: typeStr = "floor"; break;
+            case Platform::Type::EndFloor: typeStr = "endfloor"; break;
+        }
+        p["type"] = typeStr;
         j["platforms"].push_back(p);
+        std::cout << "Plateforme " << i << " sauvegardee avec type: " << typeStr << "\n";
+    }
+    
+    // Update enemies array
+    j["enemies"] = nlohmann::json::array();
+    for (size_t i = 0; i < enemies.size(); ++i) {
+        const auto& enemy = enemies[i];
+        sf::Vector2f pos = enemy->getPosition();
+        nlohmann::json e;
+        e["x"] = pos.x;
+        e["y"] = pos.y;
+        
+        // Determine enemy type using dynamic_cast
+        if (dynamic_cast<PatrolEnemy*>(enemy.get())) {
+            e["type"] = "patrol";
+            e["patrolDistance"] = enemy->getPatrolDistance();
+        } else if (dynamic_cast<FlyingEnemy*>(enemy.get())) {
+            e["type"] = "flying";
+            e["patrolDistance"] = enemy->getPatrolDistance();
+            e["horizontalPatrol"] = true;
+        } else if (dynamic_cast<Spike*>(enemy.get())) {
+            e["type"] = "spike";
+        }
+        j["enemies"].push_back(e);
+        std::cout << "Ennemi " << i << " sauvegarde avec type: " << e["type"].get<std::string>() << "\n";
     }
 
     // Save back to file
@@ -1694,8 +1899,9 @@ void Game::saveLevelToFile() {
     std::cout << "Niveau sauvegarde dans " << savePath << " (" << platforms.size() << " plateformes)\n";
     std::cout << "Verifie le fichier: " << savePath << "\n";
     
-    // Reload level to sync with file
-    loadLevel(currentLevelPath);
+    // Don't reload automatically - the platforms are already in memory with correct types
+    // Reloading would use savePath which might not work correctly
+    // User can manually reload with F5 if needed
     selectedPlatformIndex = -1;
     isDraggingPlatform = false;
     
@@ -1762,19 +1968,100 @@ void Game::saveLevelToFile() {
     std::string newPlatforms = "[\n";
     for (size_t i = 0; i < platforms.size(); ++i) {
         sf::FloatRect bounds = platforms[i]->getBounds();
+        Platform::Type currentType = platforms[i]->getType();
+        std::string typeStr = (currentType == Platform::Type::EndFloor) ? "endfloor" : "floor";
+        
         newPlatforms += "    { \"x\": " + std::to_string(static_cast<int>(bounds.left)) + 
                        ", \"y\": " + std::to_string(static_cast<int>(bounds.top)) +
                        ", \"width\": " + std::to_string(static_cast<int>(bounds.width)) +
-                       ", \"height\": " + std::to_string(static_cast<int>(bounds.height)) + " }";
+                       ", \"height\": " + std::to_string(static_cast<int>(bounds.height)) +
+                       ", \"type\": \"" + typeStr + "\" }";
         if (i < platforms.size() - 1) {
             newPlatforms += ",";
         }
         newPlatforms += "\n";
+        std::cout << "Plateforme " << i << " sauvegardee (fallback) avec type: " << typeStr << "\n";
     }
     newPlatforms += "  ]";
 
     // Replace platforms array in content
     content.replace(arrayStart, arrayEnd - arrayStart, newPlatforms);
+    
+    // Also update enemies array if it exists
+    size_t enemiesStart = content.find("\"enemies\"");
+    if (enemiesStart != std::string::npos) {
+        size_t enemiesArrayStart = content.find("[", enemiesStart);
+        if (enemiesArrayStart != std::string::npos) {
+            size_t enemiesArrayEnd = enemiesArrayStart + 1;
+            int enemiesBracketDepth = 1;
+            while (enemiesArrayEnd < content.length() && enemiesBracketDepth > 0) {
+                if (content[enemiesArrayEnd] == '[') enemiesBracketDepth++;
+                else if (content[enemiesArrayEnd] == ']') enemiesBracketDepth--;
+                enemiesArrayEnd++;
+            }
+            
+            std::string newEnemies = "[\n";
+            for (size_t i = 0; i < enemies.size(); ++i) {
+                sf::Vector2f pos = enemies[i]->getPosition();
+                std::string typeStr = "patrol";
+                if (dynamic_cast<FlyingEnemy*>(enemies[i].get())) {
+                    typeStr = "flying";
+                } else if (dynamic_cast<Spike*>(enemies[i].get())) {
+                    typeStr = "spike";
+                }
+                
+                newEnemies += "    { \"type\": \"" + typeStr + "\", \"x\": " + std::to_string(static_cast<int>(pos.x)) + 
+                             ", \"y\": " + std::to_string(static_cast<int>(pos.y));
+                if (typeStr == "patrol" || typeStr == "flying") {
+                    float patrolDist = enemies[i]->getPatrolDistance();
+                    newEnemies += ", \"patrolDistance\": " + std::to_string(static_cast<int>(patrolDist));
+                }
+                if (typeStr == "flying") {
+                    newEnemies += ", \"horizontalPatrol\": true";
+                }
+                newEnemies += " }";
+                if (i < enemies.size() - 1) {
+                    newEnemies += ",";
+                }
+                newEnemies += "\n";
+            }
+            newEnemies += "  ]";
+            
+            content.replace(enemiesArrayStart, enemiesArrayEnd - enemiesArrayStart, newEnemies);
+        }
+    } else {
+        // Insert enemies array after platforms
+        size_t insertPos = content.find_last_of("]");
+        if (insertPos != std::string::npos) {
+            std::string newEnemies = ",\n  \"enemies\": [\n";
+            for (size_t i = 0; i < enemies.size(); ++i) {
+                sf::Vector2f pos = enemies[i]->getPosition();
+                std::string typeStr = "patrol";
+                if (dynamic_cast<FlyingEnemy*>(enemies[i].get())) {
+                    typeStr = "flying";
+                } else if (dynamic_cast<Spike*>(enemies[i].get())) {
+                    typeStr = "spike";
+                }
+                
+                newEnemies += "    { \"type\": \"" + typeStr + "\", \"x\": " + std::to_string(static_cast<int>(pos.x)) + 
+                             ", \"y\": " + std::to_string(static_cast<int>(pos.y));
+                if (typeStr == "patrol" || typeStr == "flying") {
+                    float patrolDist = enemies[i]->getPatrolDistance();
+                    newEnemies += ", \"patrolDistance\": " + std::to_string(static_cast<int>(patrolDist));
+                }
+                if (typeStr == "flying") {
+                    newEnemies += ", \"horizontalPatrol\": true";
+                }
+                newEnemies += " }";
+                if (i < enemies.size() - 1) {
+                    newEnemies += ",";
+                }
+                newEnemies += "\n";
+            }
+            newEnemies += "  ]";
+            content.insert(insertPos + 1, newEnemies);
+        }
+    }
 
     // Write back to file
     std::ofstream outFile(savePath);
@@ -1792,8 +2079,9 @@ void Game::saveLevelToFile() {
     std::cout << "Niveau sauvegarde (fallback) dans " << savePath << " (" << platforms.size() << " plateformes)\n";
     std::cout << "Verifie le fichier: " << savePath << "\n";
     
-    // Reload level to sync with file
-    loadLevel(currentLevelPath);
+    // Don't reload automatically - the platforms are already in memory with correct types
+    // Reloading would use savePath which might not work correctly
+    // User can manually reload with F5 if needed
     selectedPlatformIndex = -1;
     isDraggingPlatform = false;
     

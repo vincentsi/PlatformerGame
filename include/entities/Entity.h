@@ -17,8 +17,8 @@ public:
     const sf::Vector2f& getSize() const { return size; }
 
     // Setters
-    void setPosition(float x, float y);
-    void setPosition(const sf::Vector2f& pos);
+    virtual void setPosition(float x, float y);
+    virtual void setPosition(const sf::Vector2f& pos);
     void setVelocity(float vx, float vy);
     void setVelocity(const sf::Vector2f& vel);
 
