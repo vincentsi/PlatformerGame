@@ -662,27 +662,30 @@ void Game::update(float dt) {
                 levelCheckpoints[previousLevelPath] = previousCheckpoint;
             }
             
+            // Store if we're coming from a portal (before loadLevel resets it)
+            bool comingFromPortal = (pendingPortalSpawnDirection != "default" || pendingPortalCustomSpawn);
+            
             loadLevel(nextLevelPath);
             nextLevelPath = "";
             
-            // Reset portal spawn info after level load
-            pendingPortalSpawnDirection = "default";
-            pendingPortalCustomSpawn = false;
-            
-            auto it = levelCheckpoints.find(currentLevelPath);
-            if (it != levelCheckpoints.end() && !it->second.empty()) {
-                activeCheckpointId = it->second;
-                for (auto& checkpoint : checkpoints) {
-                    if (checkpoint->getId() == activeCheckpointId) {
-                        checkpoint->activate();
-                        // Update spawn point for all players
-                        sf::Vector2f cpPos = checkpoint->getSpawnPosition();
-                        for (auto& p : players) {
-                            if (p) {
-                                p->setSpawnPoint(cpPos.x, cpPos.y);
+            // Portal spawn info is reset inside loadLevel after use
+            // Don't reactivate checkpoint if we came from a portal (portal spawn takes priority)
+            if (!comingFromPortal) {
+                auto it = levelCheckpoints.find(currentLevelPath);
+                if (it != levelCheckpoints.end() && !it->second.empty()) {
+                    activeCheckpointId = it->second;
+                    for (auto& checkpoint : checkpoints) {
+                        if (checkpoint->getId() == activeCheckpointId) {
+                            checkpoint->activate();
+                            // Update spawn point for all players
+                            sf::Vector2f cpPos = checkpoint->getSpawnPosition();
+                            for (auto& p : players) {
+                                if (p) {
+                                    p->setSpawnPoint(cpPos.x, cpPos.y);
+                                }
                             }
+                            break;
                         }
-                        break;
                     }
                 }
             }
@@ -1380,54 +1383,145 @@ void Game::loadLevel(const std::string& levelPath) {
             
         kineticWaveProjectiles.clear();
         
-        // Determine spawn position: use checkpoint if available, otherwise level start or edge spawn
+        // Determine spawn position: portal spawn takes priority, then checkpoint, then level start
         sf::Vector2f spawnPos = currentLevel->startPosition;
         bool useCheckpointSpawn = false;
         
-        // First, check if this level has an activated checkpoint
-        auto it = levelCheckpoints.find(currentLevelPath);
-        if (it != levelCheckpoints.end() && !it->second.empty()) {
-            // This level has an activated checkpoint, use it
-            activeCheckpointId = it->second;
-            for (auto& checkpoint : checkpoints) {
-                if (checkpoint->getId() == activeCheckpointId) {
-                    checkpoint->activate();
-                    spawnPos = checkpoint->getSpawnPosition();
-                    useCheckpointSpawn = true;
-                    break;
-                }
-            }
-        } else if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty() && lastGlobalCheckpointLevel != currentLevelPath) {
-            // No checkpoint activated in this level, and global checkpoint is from a different level
-            // Don't use global checkpoint position here (it's in another level)
-            // Just spawn at level start, and respawn will handle loading the checkpoint level
-            spawnPos = currentLevel->startPosition;
-            activeCheckpointId.clear();
-            // Don't set spawn point to global checkpoint position (it's in another level)
-            // The respawn system will handle loading the checkpoint level when needed
-        } else {
-            // No checkpoint at all, use level start
-            activeCheckpointId.clear();
-        }
-        
-        // Override with portal spawn if requested (for portal transitions)
+        // First priority: portal spawn (when transitioning via portal)
         if (pendingPortalCustomSpawn) {
             spawnPos = pendingPortalCustomSpawnPos;
             useCheckpointSpawn = false; // Custom spawn takes priority
         } else if (pendingPortalSpawnDirection != "default" && !currentLevel->cameraZones.empty()) {
-                const auto& zone = currentLevel->cameraZones[0];
-            if (pendingPortalSpawnDirection == "left") {
-                    spawnPos.x = zone.minX + 80.0f;
-            } else if (pendingPortalSpawnDirection == "right") {
-                    spawnPos.x = zone.maxX - 80.0f;
-            } else if (pendingPortalSpawnDirection == "top") {
-                spawnPos.y = zone.minY + 80.0f;
-            } else if (pendingPortalSpawnDirection == "bottom") {
-                spawnPos.y = zone.maxY - 80.0f;
-                }
-            // Keep other coordinate from level start to ensure on ground/platform
-            useCheckpointSpawn = false; // Portal spawn takes priority
+            const auto& zone = currentLevel->cameraZones[0];
+            
+            // Clean the spawn direction (remove any extra quotes or whitespace)
+            std::string cleanDirection = pendingPortalSpawnDirection;
+            while (!cleanDirection.empty() && (cleanDirection.front() == '"' || cleanDirection.front() == '\'' || cleanDirection.front() == ' ' || cleanDirection.front() == '\t' || cleanDirection.front() == '\n' || cleanDirection.front() == '\r')) {
+                cleanDirection = cleanDirection.substr(1);
             }
+            while (!cleanDirection.empty() && (cleanDirection.back() == '"' || cleanDirection.back() == '\'' || cleanDirection.back() == ' ' || cleanDirection.back() == '\t' || cleanDirection.back() == '\n' || cleanDirection.back() == '\r')) {
+                cleanDirection = cleanDirection.substr(0, cleanDirection.length() - 1);
+            }
+            
+            // Convert to lowercase for case-insensitive comparison
+            std::string lowerDirection = cleanDirection;
+            std::transform(lowerDirection.begin(), lowerDirection.end(), lowerDirection.begin(), ::tolower);
+            
+            if (lowerDirection == "lefttop" || lowerDirection == "leftbottom") {
+                spawnPos.x = zone.minX + 40.0f; // Spawn closer to the left edge
+                // Find a platform at this X position to set Y correctly
+                float bestY = (lowerDirection == "lefttop") ? 10000.0f : -10000.0f; // Top: find highest, Bottom: find lowest
+                bool foundPlatform = false;
+                for (const auto& platform : platforms) {
+                    if (platform) {
+                        sf::FloatRect platBounds = platform->getBounds();
+                        // Check if platform is near our spawn X
+                        if (spawnPos.x >= platBounds.left - 50.0f && spawnPos.x <= platBounds.left + platBounds.width + 50.0f) {
+                            float platformTop = platBounds.top;
+                            if (lowerDirection == "lefttop") {
+                                // Find the HIGHEST platform (lowest Y value)
+                                if (platformTop < bestY || !foundPlatform) {
+                                    bestY = platformTop - 60.0f;
+                                    foundPlatform = true;
+                                }
+                            } else { // leftbottom
+                                // Find the LOWEST platform (highest Y value, closest to ground)
+                                if (platformTop > bestY) {
+                                    bestY = platformTop - 60.0f;
+                                    foundPlatform = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!foundPlatform) {
+                    bestY = spawnPos.y; // Use level start Y as fallback
+                }
+                spawnPos.y = bestY;
+            } else if (lowerDirection == "righttop" || lowerDirection == "rightbottom") {
+                spawnPos.x = zone.maxX - 30.0f; // Spawn closer to the right edge
+                // Clamp X to be within map bounds
+                if (spawnPos.x < zone.minX) spawnPos.x = zone.minX + 20.0f;
+                if (spawnPos.x > zone.maxX) spawnPos.x = zone.maxX - 30.0f;
+                // Find a platform at this X position - search more broadly
+                float bestY = (lowerDirection == "righttop") ? 10000.0f : -10000.0f; // Top: find highest, Bottom: find lowest
+                bool foundPlatform = false;
+                for (const auto& platform : platforms) {
+                    if (platform) {
+                        sf::FloatRect platBounds = platform->getBounds();
+                        // Check if platform is near our spawn X (wider search range)
+                        if (spawnPos.x >= platBounds.left - 100.0f && spawnPos.x <= platBounds.left + platBounds.width + 100.0f) {
+                            float platformTop = platBounds.top;
+                            if (lowerDirection == "righttop") {
+                                // Find the HIGHEST platform (lowest Y value)
+                                if (platformTop < bestY || !foundPlatform) {
+                                    bestY = platformTop - 60.0f;
+                                    foundPlatform = true;
+                                }
+                            } else { // rightbottom
+                                // Find the LOWEST platform (highest Y value, closest to ground)
+                                if (platformTop > bestY) {
+                                    bestY = platformTop - 60.0f;
+                                    foundPlatform = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!foundPlatform) {
+                    // Fallback: use level start Y or find any platform near the right edge
+                    bestY = spawnPos.y; // Default to level start Y
+                    for (const auto& platform : platforms) {
+                        if (platform) {
+                            sf::FloatRect platBounds = platform->getBounds();
+                            // Find any platform near the right edge
+                            if (platBounds.left + platBounds.width >= zone.maxX - 150.0f) {
+                                float platformTop = platBounds.top;
+                                if (lowerDirection == "righttop") {
+                                    if (platformTop < bestY || !foundPlatform) {
+                                        bestY = platformTop - 60.0f;
+                                        foundPlatform = true;
+                                        spawnPos.x = platBounds.left + platBounds.width - 30.0f;
+                                    }
+                                } else { // rightbottom
+                                    if (platformTop > bestY) {
+                                        bestY = platformTop - 60.0f;
+                                        foundPlatform = true;
+                                        spawnPos.x = platBounds.left + platBounds.width - 30.0f;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                spawnPos.y = bestY;
+            }
+            useCheckpointSpawn = false; // Portal spawn takes priority
+        } else {
+            // No portal spawn, check for checkpoint
+            auto it = levelCheckpoints.find(currentLevelPath);
+            if (it != levelCheckpoints.end() && !it->second.empty()) {
+                // This level has an activated checkpoint, use it
+                activeCheckpointId = it->second;
+                for (auto& checkpoint : checkpoints) {
+                    if (checkpoint->getId() == activeCheckpointId) {
+                        checkpoint->activate();
+                        spawnPos = checkpoint->getSpawnPosition();
+                        useCheckpointSpawn = true;
+                        break;
+                    }
+                }
+            } else if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty() && lastGlobalCheckpointLevel != currentLevelPath) {
+                // No checkpoint activated in this level, and global checkpoint is from a different level
+                // Don't use global checkpoint position here (it's in another level)
+                // Just spawn at level start, and respawn will handle loading the checkpoint level
+                spawnPos = currentLevel->startPosition;
+                activeCheckpointId.clear();
+            } else {
+                // No checkpoint at all, use level start
+                activeCheckpointId.clear();
+            }
+        }
         
         // Reset all players to spawn position
         if (!players.empty()) {
@@ -1452,8 +1546,8 @@ void Game::loadLevel(const std::string& levelPath) {
 
         // Update camera limits (only if camera exists)
         if (camera && !currentLevel->cameraZones.empty()) {
-            const auto& zone = currentLevel->cameraZones[0];
-            camera->setLimits(zone.minX, zone.maxX, zone.minY, zone.maxY);
+            const auto& camZone = currentLevel->cameraZones[0];
+            camera->setLimits(camZone.minX, camZone.maxX, camZone.minY, camZone.maxY);
         }
 
         // Reset camera to active player position immediately (use update with 0 dt for instant snap)
@@ -1620,10 +1714,6 @@ void Game::continueGame() {
                     }
                 }
 
-                std::cout << "Spawning at checkpoint: " << activeCheckpointId << "\n";
-            } else {
-                std::cout << "Spawning at level start\n";
-            }
 
             // Create all 3 characters at spawn position
             auto lyra = std::make_unique<Player>(spawnPos.x, spawnPos.y, CharacterType::Lyra);

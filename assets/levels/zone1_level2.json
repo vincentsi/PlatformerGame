@@ -111,8 +111,22 @@
   ],
 
   "interactiveObjects": [
-    { "type": "terminal", "x": 2500, "y": 80, "width": 40, "height": 40, "id": "term_corridor_1" },
-    { "type": "terminal", "x": 4000, "y": 50, "width": 40, "height": 40, "id": "term_corridor_2" }
+    {
+      "type": "terminal",
+      "x": 2500,
+      "y": 80,
+      "width": 40,
+      "height": 40,
+      "id": "term_corridor_1"
+    },
+    {
+      "type": "terminal",
+      "x": 4000,
+      "y": 50,
+      "width": 40,
+      "height": 40,
+      "id": "term_corridor_2"
+    }
   ],
 
   "cameraZones": [{ "minX": 0, "maxX": 5600, "minY": -200, "maxY": 600 }],
@@ -124,7 +138,7 @@
       "width": 20,
       "height": 200,
       "targetLevel": "zone1_level1",
-      "spawnDirection": "right"
+      "spawnDirection": "rightbottom"
     },
     {
       "x": 5590,
@@ -132,7 +146,7 @@
       "width": 20,
       "height": 200,
       "targetLevel": "zone1_level3",
-      "spawnDirection": "left"
+      "spawnDirection": "leftbottom"
     },
     {
       "x": 0,
@@ -140,12 +154,10 @@
       "width": 200,
       "height": 20,
       "targetLevel": "zone1_secret",
-      "spawnDirection": "bottom",
-      "useCustomSpawn": false
+      "spawnDirection": "rightbottom "
     }
   ],
-  "enemies": [
-  ],
+  "enemies": [],
 
   "goalZone": {
     "x": 5200,

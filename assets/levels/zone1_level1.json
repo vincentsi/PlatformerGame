@@ -54,14 +54,14 @@
       "width": 20,
       "height": 200,
       "targetLevel": "zone1_level2",
-      "spawnDirection": "left"
+      "spawnDirection": "leftbottom"
     }
   ],
 
   "enemies": [
     {
       "type": "flying",
-      "x": 1143,
+      "x": 1238,
       "y": 382,
       "patrolDistance": 759,
       "horizontalPatrol": true
