@@ -123,7 +123,7 @@ void Menu::handleMouseClick(const sf::Vector2f& mousePos) {
     }
 }
 
-void Menu::update(float dt) {
+void Menu::update(float /*dt*/) {
     // Animation could go here (pulsing, etc.)
 }
 
@@ -161,7 +161,7 @@ void Menu::selectPrevious() {
     if (!items.empty()) {
         selectedIndex--;
         if (selectedIndex < 0) {
-            selectedIndex = items.size() - 1;
+            selectedIndex = static_cast<int>(items.size()) - 1;
         }
     }
 }

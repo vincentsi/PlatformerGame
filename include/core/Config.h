@@ -32,6 +32,7 @@ namespace Config {
     // Debug
     constexpr bool SHOW_FPS = true;
     constexpr bool SHOW_COLLISION_BOXES = false;
+    constexpr bool SHOW_HITBOXES = false;  // Default off, toggle with key
 
     // Special abilities
     constexpr float KINETIC_WAVE_RANGE = 150.0f;      // Lyra's kinetic wave range
@@ -45,6 +46,13 @@ namespace Config {
     constexpr float BERSERK_COOLDOWN = 20.0f;         // Cooldown in seconds
     constexpr float BERSERK_HEAL_RATE = 0.5f;         // HP per second during berserk
     constexpr float BERSERK_SPEED_BOOST = 1.5f;       // Speed multiplier
+    
+    // Attack settings
+    constexpr float ATTACK_WIDTH = 60.0f;             // Attack hitbox width in pixels
+    constexpr float ATTACK_HEIGHT = 40.0f;            // Attack hitbox height in pixels
+    constexpr float ATTACK_DISTANCE = 50.0f;          // Distance from player center to attack hitbox
+    constexpr float ATTACK_COOLDOWN = 0.5f;           // Attack cooldown in seconds
+    constexpr int ATTACK_DAMAGE = 1;                   // Damage per attack
 
     // Gameplay constants
     constexpr float MAX_DELTA_TIME = 0.1f;            // Cap delta time to avoid spiral of death

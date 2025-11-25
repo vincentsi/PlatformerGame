@@ -17,6 +17,15 @@ struct CameraZone {
     float minY, maxY;
 };
 
+struct Portal {
+    float x, y;                    // Position du portail
+    float width, height;            // Taille de la zone de portail
+    std::string targetLevel;        // Niveau de destination (ex: "zone1_level1")
+    std::string spawnDirection;     // Direction de spawn dans le niveau cible: "left", "right", "top", "bottom", ou "default"
+    sf::Vector2f customSpawnPos;    // Position de spawn personnalisée (si spawnDirection == "custom")
+    bool useCustomSpawn;            // Utiliser la position personnalisée
+};
+
 struct LevelData {
     std::string name;
     std::string levelId;          // Unique ID (e.g., "zone1_level1", "zone2_north")
@@ -31,6 +40,7 @@ struct LevelData {
     std::vector<std::unique_ptr<Enemy>> enemies;
     std::unique_ptr<GoalZone> goalZone;
     std::vector<CameraZone> cameraZones;
+    std::vector<Portal> portals;    // Portails/limites pour changer de niveau
 };
 
 class LevelLoader {

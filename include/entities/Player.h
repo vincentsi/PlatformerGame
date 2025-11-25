@@ -20,10 +20,13 @@ public:
     void update(float dt) override;
     void draw(sf::RenderWindow& window) override;
 
+
     void moveLeft();
     void moveRight();
     void jump();
     void stopMoving();
+    void attack();
+    bool canAttack() const;
 
     void setGrounded(bool grounded);
     bool getIsGrounded() const { return isGrounded; }
@@ -62,6 +65,8 @@ public:
     bool canUseAbility() const;
     float getAbilityCooldown() const;
     float getAbilityCooldownRemaining() const;
+    float getAttackCooldownRemaining() const { return attackCooldownRemaining; }
+    int getFacingDirection() const { return facingDirection; } // 1 = right, -1 = left, 0 = down, 2 = up
     
     // Ability states
     bool isBerserkMode() const { return berserkActive; }
@@ -114,6 +119,10 @@ private:
     std::vector<sf::Texture*> abilityTexturesNorth;
     std::vector<sf::Texture*> abilityTexturesEast;
     std::vector<sf::Texture*> abilityTexturesWest;
+    std::vector<sf::Texture*> kickTexturesSouth; // Textures pour l'animation kick/attack
+    std::vector<sf::Texture*> kickTexturesNorth;
+    std::vector<sf::Texture*> kickTexturesEast;
+    std::vector<sf::Texture*> kickTexturesWest;
     std::vector<sf::Texture*> currentAnimationTextures; // Textures de l'animation actuelle
     int currentAnimationFrame;
     float animationTimer;
@@ -124,11 +133,13 @@ private:
     float hurtFrameDuration;
     float deathFrameDuration;
     float abilityFrameDuration;
+    float kickFrameDuration;
     bool useSprites;  // Utilise les sprites ou le rectangle coloré?
     int facingDirection; // 0 = face (south/bas), 2 = dos (north/haut), 1 = droite (east), -1 = gauche (west)
     bool isRunning;   // true = run animation, false = idle animation
     float hurtAnimationTimer; // Timer pour animation hurt (joue une fois)
     float abilityAnimationTimer; // Timer pour animation ability (joue une fois)
+    float attackAnimationTimer; // Timer pour animation attack/kick (joue une fois)
     
     enum class AnimationState {
         Idle,
@@ -137,7 +148,8 @@ private:
         DoubleJump,
         Hurt,
         Death,
-        Ability
+        Ability,
+        Attack
     };
     AnimationState currentAnimationState;
     
@@ -150,6 +162,7 @@ private:
     void loadHurtAnimation();
     void loadDeathAnimation();
     void loadAbilityAnimation();
+    void loadKickAnimation();
     void updateAnimation(float dt);
 
     // Coyote time (grace period for jumping after leaving platform)
@@ -183,6 +196,7 @@ private:
     // Special abilities
     float abilityCooldown;
     float abilityCooldownRemaining;
+    float attackCooldownRemaining;
     
     // Lyra - Kinetic Wave
     bool kineticWaveActive;

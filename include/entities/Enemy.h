@@ -25,7 +25,7 @@ public:
     void setPatrolBounds(float leftBound, float rightBound);
     float getLeftBound() const { return patrolLeftBound; }
     float getRightBound() const { return patrolRightBound; }
-    
+
     // Get/set patrol distance (distance from center)
     float getPatrolDistance() const;
     void setPatrolDistance(float distance);

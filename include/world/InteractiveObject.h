@@ -20,6 +20,7 @@ public:
     sf::FloatRect getBounds() const;
     sf::Vector2f getPosition() const { return position; }
     sf::Vector2f getSize() const { return size; }
+    void setPosition(float x, float y);
     InteractiveType getType() const { return type; }
     std::string getId() const { return id; }
     

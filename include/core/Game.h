@@ -80,11 +80,23 @@ private:
     std::vector<std::string> levelHistory;
     int levelHistoryPos = -1;
     std::unordered_map<std::string, std::string> levelCheckpoints;
-    int pendingSpawnEdge = -1;
+    
+    // Global last checkpoint (persists across level changes)
+    std::string lastGlobalCheckpointLevel;
+    std::string lastGlobalCheckpointId;
+    sf::Vector2f lastGlobalCheckpointPos;
+    
+    // Portal spawn info (for positioning player after portal transition)
+    std::string pendingPortalSpawnDirection = "default";
+    bool pendingPortalCustomSpawn = false;
+    sf::Vector2f pendingPortalCustomSpawnPos;
 
     // Polish systems
     std::unique_ptr<ParticleSystem> particleSystem;
     std::unique_ptr<CameraShake> cameraShake;
+    
+    // Debug
+    bool showHitboxes = false;
     std::unique_ptr<AudioManager> audioManager;
     std::unique_ptr<ScreenTransition> screenTransition;
 
@@ -132,13 +144,18 @@ private:
         Platform,
         PatrolEnemy,
         FlyingEnemy,
-        Spike
+        Spike,
+        Terminal,
+        Door,
+        Turret
     };
     EditorObjectType editorObjectType = EditorObjectType::Platform;
     int selectedPlatformIndex = -1;
     int selectedEnemyIndex = -1;
+    int selectedInteractiveIndex = -1;
     bool isDraggingPlatform = false;
     bool isDraggingEnemy = false;
+    bool isDraggingInteractive = false;
     sf::Vector2f dragOffset;
     sf::Font editorFont;
     sf::Text editorText;

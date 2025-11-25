@@ -39,6 +39,7 @@ set(SOURCES
     src/effects/CameraShake.cpp
     src/effects/ScreenTransition.cpp
     src/audio/AudioManager.cpp
+    src/debug/HitboxDebug.cpp
     src/graphics/SpriteManager.cpp
     src/graphics/AnimatedSprite.cpp
     src/graphics/Tileset.cpp

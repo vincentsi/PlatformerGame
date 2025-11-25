@@ -7,7 +7,10 @@
 #include <cmath>
 
 Player::Player(float x, float y, CharacterType type)
-    : Entity(x, y, Config::PLAYER_WIDTH, Config::PLAYER_HEIGHT)
+    : Entity(x, y, 
+             (type == CharacterType::Lyra) ? Config::PLAYER_WIDTH - 4.0f : 
+             (type == CharacterType::Noah) ? Config::PLAYER_WIDTH - 8.0f : Config::PLAYER_WIDTH,
+             (type == CharacterType::Lyra) ? Config::PLAYER_HEIGHT + 15.0f : Config::PLAYER_HEIGHT)
     , characterType(type)
     , currentAnimationFrame(0)
     , animationTimer(0.0f)
@@ -18,11 +21,13 @@ Player::Player(float x, float y, CharacterType type)
     , hurtFrameDuration(0.1f)
     , deathFrameDuration(0.15f)      // un peu plus lent pour bien lire l'anim
     , abilityFrameDuration(0.1f)
+    , kickFrameDuration(0.08f)      // Kick animation frames (rapide)
     , useSprites(false)
     , facingDirection(0)  // 0 = face caméra, 1 = droite, -1 = gauche
     , isRunning(false)
     , hurtAnimationTimer(0.0f)
     , abilityAnimationTimer(0.0f)
+    , attackAnimationTimer(0.0f)
     , currentAnimationState(AnimationState::Idle)
     , coyoteTimeCounter(0.0f)
     , jumpBufferCounter(0.0f)
@@ -42,6 +47,7 @@ Player::Player(float x, float y, CharacterType type)
     , wasGrounded(false)
     , abilityCooldown(0.0f)
     , abilityCooldownRemaining(0.0f)
+    , attackCooldownRemaining(0.0f)
     , kineticWaveActive(false)
     , kineticWaveJustActivated(false)
     , kineticWaveTimer(0.0f)
@@ -75,6 +81,7 @@ Player::Player(float x, float y, CharacterType type)
     loadHurtAnimation();
     loadDeathAnimation();
     loadAbilityAnimation();
+    loadKickAnimation();
     
     sprite.setPosition(position);
 }
@@ -90,6 +97,10 @@ void Player::update(float dt) {
     
     if (abilityAnimationTimer > 0.0f) {
         abilityAnimationTimer -= dt;
+    }
+    
+    if (attackAnimationTimer > 0.0f) {
+        attackAnimationTimer -= dt;
     }
     
     if (dead) {
@@ -461,6 +472,26 @@ float Player::getStompDamageMultiplier() const {
     }
 }
 
+bool Player::canAttack() const {
+    return attackCooldownRemaining <= 0.0f && !dead;
+}
+
+void Player::attack() {
+    if (!canAttack()) {
+        return;
+    }
+    
+    // Set attack cooldown
+    attackCooldownRemaining = Config::ATTACK_COOLDOWN;
+    
+    // Trigger attack animation (duration based on number of frames)
+    // high-kick animation has 7 frames
+    attackAnimationTimer = 0.4f; // ~0.4 seconds for kick animation
+    
+    // Attack logic will be handled in Game::update() to check for enemy collisions
+    // This just triggers the attack state
+}
+
 // Special abilities implementation
 void Player::useAbility() {
     if (!canUseAbility()) {
@@ -508,6 +539,14 @@ void Player::updateAbilityCooldown(float dt) {
         abilityCooldownRemaining -= dt;
         if (abilityCooldownRemaining < 0.0f) {
             abilityCooldownRemaining = 0.0f;
+        }
+    }
+    
+    // Update attack cooldown
+    if (attackCooldownRemaining > 0.0f) {
+        attackCooldownRemaining -= dt;
+        if (attackCooldownRemaining < 0.0f) {
+            attackCooldownRemaining = 0.0f;
         }
     }
 }
@@ -963,6 +1002,39 @@ void Player::loadAbilityAnimation() {
     }
 }
 
+void Player::loadKickAnimation() {
+    auto& spriteManager = SpriteManager::getInstance();
+    
+    if (characterType == CharacterType::Lyra) {
+        kickTexturesSouth.clear();
+        kickTexturesNorth.clear();
+        kickTexturesEast.clear();
+        kickTexturesWest.clear();
+        
+        auto loadDirection = [&](const std::string& direction, std::vector<sf::Texture*>& textures) {
+            for (int i = 0; i < 7; i++) {
+                std::string frameNum = (i < 10 ? "00" : (i < 100 ? "0" : "")) + std::to_string(i);
+                std::string id = "lyra_kick_" + direction + "_" + std::to_string(i);
+                std::string filepath = "assets/sprites/lyra_pixellab/animations/high-kick/" + direction + "/frame_" + frameNum + ".png";
+                
+                if (spriteManager.loadTexture(id, filepath)) {
+                    sf::Texture* tex = spriteManager.getTexture(id);
+                    if (tex) {
+                        textures.push_back(tex);
+                    }
+                } else {
+                    break;
+                }
+            }
+        };
+        
+        loadDirection("south", kickTexturesSouth);
+        loadDirection("north", kickTexturesNorth);
+        loadDirection("east", kickTexturesEast);
+        loadDirection("west", kickTexturesWest);
+    }
+}
+
 void Player::updateAnimation(float dt) {
     if (currentAnimationTextures.empty()) {
         return;
@@ -971,9 +1043,12 @@ void Player::updateAnimation(float dt) {
     // Determine current animation state
     AnimationState newState = currentAnimationState;
     
-    // Priority: Death > Ability > Hurt > Jump > Run/Idle
+    // Priority: Death > Attack > Ability > Hurt > Jump > Run/Idle
     if (dead) {
         newState = AnimationState::Death;
+    } else if (attackAnimationTimer > 0.0f) {
+        // Attack animation takes priority when active
+        newState = AnimationState::Attack;
     } else if (abilityAnimationTimer > 0.0f) {
         // Ability animation takes priority when active
         newState = AnimationState::Ability;
@@ -1051,6 +1126,10 @@ void Player::updateAnimation(float dt) {
                 texturesToUse = getDirectionTextures(deathTexturesSouth, deathTexturesNorth,
                                                      deathTexturesEast, deathTexturesWest);
                 break;
+            case AnimationState::Attack:
+                texturesToUse = getDirectionTextures(kickTexturesSouth, kickTexturesNorth,
+                                                     kickTexturesEast, kickTexturesWest);
+                break;
             case AnimationState::Ability:
                 texturesToUse = getDirectionTextures(abilityTexturesSouth, abilityTexturesNorth,
                                                      abilityTexturesEast, abilityTexturesWest);
@@ -1098,6 +1177,19 @@ void Player::updateAnimation(float dt) {
                     sprite.setTexture(*currentAnimationTextures[currentAnimationFrame]);
                 }
                 // Otherwise, stay on last frame
+            }
+        }
+    }
+    // Attack animation: play once during attack timer
+    else if (currentAnimationState == AnimationState::Attack) {
+        if (!currentAnimationTextures.empty()) {
+            animationTimer += dt;
+            
+            // Play attack animation once, loop if timer still active
+            if (animationTimer >= kickFrameDuration) {
+                animationTimer -= kickFrameDuration;
+                currentAnimationFrame = (currentAnimationFrame + 1) % currentAnimationTextures.size();
+                sprite.setTexture(*currentAnimationTextures[currentAnimationFrame]);
             }
         }
     }

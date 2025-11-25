@@ -177,6 +177,28 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
             }
         }
 
+        // Portals (zones de transition vers d'autres niveaux)
+        if (j.contains("portals") && j["portals"].is_array()) {
+            for (const auto& p : j["portals"]) {
+                if (!p.is_object()) continue;
+                Portal portal{};
+                portal.x = p.value("x", 0.0f);
+                portal.y = p.value("y", 0.0f);
+                portal.width = p.value("width", 50.0f);
+                portal.height = p.value("height", 100.0f);
+                portal.targetLevel = p.value("targetLevel", std::string{});
+                portal.spawnDirection = p.value("spawnDirection", std::string("default"));
+                portal.useCustomSpawn = p.value("useCustomSpawn", false);
+                if (portal.useCustomSpawn && p.contains("customSpawnPos") && p["customSpawnPos"].is_array() && p["customSpawnPos"].size() >= 2) {
+                    portal.customSpawnPos.x = p["customSpawnPos"][0].get<float>();
+                    portal.customSpawnPos.y = p["customSpawnPos"][1].get<float>();
+                }
+                if (!portal.targetLevel.empty()) {
+                    levelData->portals.push_back(portal);
+                }
+            }
+        }
+
         // Enemies
         if (j.contains("enemies") && j["enemies"].is_array()) {
             for (const auto& e : j["enemies"]) {
@@ -564,6 +586,70 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
             }
 
             pos = objEnd + 1;
+        }
+    }
+
+    // Portals (legacy parsing - simple extraction)
+    size_t portalsStart = content.find("\"portals\"");
+    if (portalsStart != std::string::npos) {
+        size_t arrayStart = content.find("[", portalsStart);
+        if (arrayStart != std::string::npos) {
+            int bracketDepth = 1;
+            size_t arrayEnd = arrayStart + 1;
+            while (arrayEnd < content.length() && bracketDepth > 0) {
+                if (content[arrayEnd] == '[') bracketDepth++;
+                else if (content[arrayEnd] == ']') bracketDepth--;
+                if (bracketDepth > 0) arrayEnd++;
+            }
+            
+            if (arrayEnd < content.length() && bracketDepth == 0) {
+                std::string portalsSection = content.substr(arrayStart, arrayEnd - arrayStart);
+                size_t pos = 0;
+                while ((pos = portalsSection.find("{", pos)) != std::string::npos) {
+                    size_t objEnd = portalsSection.find("}", pos);
+                    if (objEnd == std::string::npos) break;
+                    
+                    std::string obj = portalsSection.substr(pos, objEnd - pos + 1);
+                    
+                    Portal portal{};
+                    portal.x = parseFloat(extractValue(obj, "x"));
+                    portal.y = parseFloat(extractValue(obj, "y"));
+                    portal.width = parseFloat(extractValue(obj, "width"));
+                    if (portal.width <= 0.0f) portal.width = 50.0f;
+                    portal.height = parseFloat(extractValue(obj, "height"));
+                    if (portal.height <= 0.0f) portal.height = 100.0f;
+                    portal.targetLevel = extractValue(obj, "targetLevel");
+                    portal.spawnDirection = extractValue(obj, "spawnDirection");
+                    if (portal.spawnDirection.empty()) portal.spawnDirection = "default";
+                    
+                    std::string useCustomStr = extractValue(obj, "useCustomSpawn");
+                    portal.useCustomSpawn = (useCustomStr == "true" || useCustomStr == "True" || useCustomStr == "1");
+                    if (portal.useCustomSpawn) {
+                        // Try to extract customSpawnPos [x, y]
+                        size_t posArrayStart = obj.find("\"customSpawnPos\"");
+                        if (posArrayStart != std::string::npos) {
+                            size_t posArrayBracket = obj.find("[", posArrayStart);
+                            if (posArrayBracket != std::string::npos) {
+                                size_t posArrayEnd = obj.find("]", posArrayBracket);
+                                if (posArrayEnd != std::string::npos) {
+                                    std::string posArray = obj.substr(posArrayBracket + 1, posArrayEnd - posArrayBracket - 1);
+                                    size_t commaPos = posArray.find(",");
+                                    if (commaPos != std::string::npos) {
+                                        portal.customSpawnPos.x = parseFloat(posArray.substr(0, commaPos));
+                                        portal.customSpawnPos.y = parseFloat(posArray.substr(commaPos + 1));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!portal.targetLevel.empty()) {
+                        levelData->portals.push_back(portal);
+                    }
+                    
+                    pos = objEnd + 1;
+                }
+            }
         }
     }
 

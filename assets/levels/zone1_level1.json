@@ -18,12 +18,54 @@
 
   "checkpoints": [{ "x": 100, "y": 500, "id": "cp_lab_start" }],
 
-  "interactiveObjects": [],
+  "interactiveObjects": [
+    {
+      "type": "terminal",
+      "x": 349,
+      "y": 498,
+      "width": 50,
+      "height": 50,
+      "id": "interactive_0"
+    },
+    {
+      "type": "door",
+      "x": 450,
+      "y": 497,
+      "width": 50,
+      "height": 50,
+      "id": "interactive_1"
+    },
+    {
+      "type": "turret",
+      "x": 249,
+      "y": 494,
+      "width": 50,
+      "height": 50,
+      "id": "interactive_2"
+    }
+  ],
 
   "cameraZones": [{ "minX": 0, "maxX": 1210, "minY": 0, "maxY": 600 }],
+
+  "portals": [
+    {
+      "x": 1260,
+      "y": 400,
+      "width": 20,
+      "height": 200,
+      "targetLevel": "zone1_level2",
+      "spawnDirection": "left"
+    }
+  ],
+
   "enemies": [
-    { "type": "patrol", "x": 882, "y": 525, "patrolDistance": 140 },
-    { "type": "flying", "x": 893, "y": 405, "patrolDistance": 760, "horizontalPatrol": true },
+    {
+      "type": "flying",
+      "x": 1143,
+      "y": 382,
+      "patrolDistance": 759,
+      "horizontalPatrol": true
+    },
     { "type": "spike", "x": 1097, "y": 528 },
     { "type": "spike", "x": 994, "y": 528 }
   ],

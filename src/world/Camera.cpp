@@ -18,6 +18,7 @@ Camera::Camera(float width, float height)
 }
 
 void Camera::update(const sf::Vector2f& targetPosition, float dt) {
+    (void)dt; // Parameter not used (kept for API consistency)
     sf::Vector2f currentCenter = view.getCenter();
     sf::Vector2f desiredCenter = targetPosition;
 

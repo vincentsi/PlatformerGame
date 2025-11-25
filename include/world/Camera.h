@@ -10,6 +10,7 @@ public:
 
     void update(const sf::Vector2f& targetPosition, float dt);
     void apply(sf::RenderWindow& window);
+    const sf::View& getView() const { return view; }
 
     void setLimits(float minX, float maxX, float minY, float maxY);
     void setShakeOffset(const sf::Vector2f& offset);

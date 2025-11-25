@@ -28,6 +28,7 @@
 #include "audio/AudioManager.h"
 #include "graphics/SpriteManager.h"
 #include "physics/CollisionSystem.h"
+#include "debug/HitboxDebug.h"
 #include <fstream>
 #include <sstream>
 #if __has_include(<nlohmann/json.hpp>)
@@ -59,6 +60,9 @@ Game::Game()
     , fpsUpdateTime(0.0f)
     , frameCount(0)
     , activeCheckpointId("")
+    , lastGlobalCheckpointLevel("")
+    , lastGlobalCheckpointId("")
+    , lastGlobalCheckpointPos(0.0f, 0.0f)
     , bgWallPlain32(nullptr)
     , bgWallCables32(nullptr)
     , bgFarTexture(nullptr)
@@ -206,10 +210,10 @@ void Game::processEvents() {
                 // Note: All menu states (TitleScreen, Paused, Settings, Controls)
                 // handle ESC through their respective menu handleInput() methods
             }
-            // Back to previous level with Backspace while playing
-            if (event.key.code == sf::Keyboard::BackSpace && gameState == GameState::Playing) {
-                goBackOneLevel();
-            }
+            // Back to previous level with Backspace while playing (deprecated - use portals)
+            // if (event.key.code == sf::Keyboard::BackSpace && gameState == GameState::Playing) {
+            //     goBackOneLevel();
+            // }
 
             // Character switch with TAB key (only during gameplay)
             if (event.key.code == sf::Keyboard::Tab && gameState == GameState::Playing) {
@@ -222,10 +226,30 @@ void Game::processEvents() {
                     setState(gameState == GameState::Editor ? GameState::Playing : GameState::Editor);
                 }
             }
+            
+            // Toggle hitbox display with F2
+            if (event.key.code == sf::Keyboard::F2) {
+                showHitboxes = !showHitboxes;
+            }
+        }
+        
+        // Attack with mouse click (only in Playing mode, not in Editor)
+        if (gameState == GameState::Playing && event.type == sf::Event::MouseButtonPressed) {
+            if (event.mouseButton.button == sf::Mouse::Left) {
+                Player* player = getActivePlayer();
+                if (player && !player->isDead() && player->canAttack()) {
+                    player->attack();
+                }
+            }
         }
 
         // Editor mode mouse handling
         if (gameState == GameState::Editor) {
+            // Ensure camera view is applied for correct coordinate conversion
+            if (camera && getActivePlayer()) {
+                camera->apply(window);
+            }
+            
             if (event.type == sf::Event::MouseButtonPressed) {
                 sf::Vector2i mousePixelPos = sf::Mouse::getPosition(window);
                 sf::Vector2f worldPos = screenToWorld(sf::Vector2f(static_cast<float>(mousePixelPos.x), static_cast<float>(mousePixelPos.y)));
@@ -241,8 +265,10 @@ void Game::processEvents() {
                             if (bounds.contains(worldPos)) {
                                 selectedPlatformIndex = static_cast<int>(i);
                                 selectedEnemyIndex = -1;
+                                selectedInteractiveIndex = -1;
                                 isDraggingPlatform = true;
                                 isDraggingEnemy = false;
+                                isDraggingInteractive = false;
                                 dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
                                 clickedObject = true;
                                 break;
@@ -253,7 +279,47 @@ void Game::processEvents() {
                             platforms.push_back(std::make_unique<Platform>(worldPos.x, worldPos.y, 100.0f, 20.0f, Platform::Type::Floor));
                             selectedPlatformIndex = static_cast<int>(platforms.size() - 1);
                             selectedEnemyIndex = -1;
+                            selectedInteractiveIndex = -1;
                             isDraggingPlatform = true;
+                            isDraggingEnemy = false;
+                            isDraggingInteractive = false;
+                            dragOffset = sf::Vector2f(0, 0);
+                        }
+                    } else if (editorObjectType == EditorObjectType::Terminal || 
+                               editorObjectType == EditorObjectType::Door || 
+                               editorObjectType == EditorObjectType::Turret) {
+                        // Check interactive objects
+                        for (size_t i = 0; i < interactiveObjects.size(); ++i) {
+                            sf::FloatRect bounds = interactiveObjects[i]->getBounds();
+                            if (bounds.contains(worldPos)) {
+                                selectedInteractiveIndex = static_cast<int>(i);
+                                selectedPlatformIndex = -1;
+                                selectedEnemyIndex = -1;
+                                isDraggingInteractive = true;
+                                isDraggingPlatform = false;
+                                isDraggingEnemy = false;
+                                dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
+                                clickedObject = true;
+                                break;
+                            }
+                        }
+                        // If not clicking on interactive object, create new one
+                        if (!clickedObject) {
+                            InteractiveType type = InteractiveType::Terminal;
+                            if (editorObjectType == EditorObjectType::Door) {
+                                type = InteractiveType::Door;
+                            } else if (editorObjectType == EditorObjectType::Turret) {
+                                type = InteractiveType::Turret;
+                            }
+                            
+                            // Generate unique ID
+                            std::string id = "interactive_" + std::to_string(interactiveObjects.size());
+                            interactiveObjects.push_back(std::make_unique<InteractiveObject>(worldPos.x, worldPos.y, 50.0f, 50.0f, type, id));
+                            selectedInteractiveIndex = static_cast<int>(interactiveObjects.size() - 1);
+                            selectedPlatformIndex = -1;
+                            selectedEnemyIndex = -1;
+                            isDraggingInteractive = true;
+                            isDraggingPlatform = false;
                             isDraggingEnemy = false;
                             dragOffset = sf::Vector2f(0, 0);
                         }
@@ -264,8 +330,10 @@ void Game::processEvents() {
                             if (bounds.contains(worldPos)) {
                                 selectedEnemyIndex = static_cast<int>(i);
                                 selectedPlatformIndex = -1;
+                                selectedInteractiveIndex = -1;
                                 isDraggingEnemy = true;
                                 isDraggingPlatform = false;
+                                isDraggingInteractive = false;
                                 dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
                                 clickedObject = true;
                                 break;
@@ -288,8 +356,10 @@ void Game::processEvents() {
                             }
                             selectedEnemyIndex = static_cast<int>(enemies.size() - 1);
                             selectedPlatformIndex = -1;
+                            selectedInteractiveIndex = -1;
                             isDraggingEnemy = true;
                             isDraggingPlatform = false;
+                            isDraggingInteractive = false;
                             dragOffset = sf::Vector2f(0, 0);
                         }
                     }
@@ -310,7 +380,23 @@ void Game::processEvents() {
                             break;
                         }
                     }
-                    // Check enemies if platform not deleted
+                    // Check interactive objects if platform not deleted
+                    if (!deleted) {
+                        for (size_t i = 0; i < interactiveObjects.size(); ++i) {
+                            sf::FloatRect bounds = interactiveObjects[i]->getBounds();
+                            if (bounds.contains(worldPos)) {
+                                interactiveObjects.erase(interactiveObjects.begin() + i);
+                                if (selectedInteractiveIndex == static_cast<int>(i)) {
+                                    selectedInteractiveIndex = -1;
+                                } else if (selectedInteractiveIndex > static_cast<int>(i)) {
+                                    selectedInteractiveIndex--;
+                                }
+                                deleted = true;
+                                break;
+                            }
+                        }
+                    }
+                    // Check enemies if nothing deleted yet
                     if (!deleted) {
                         for (size_t i = 0; i < enemies.size(); ++i) {
                             sf::FloatRect bounds = enemies[i]->getBounds();
@@ -332,6 +418,7 @@ void Game::processEvents() {
                 if (event.mouseButton.button == sf::Mouse::Left) {
                     isDraggingPlatform = false;
                     isDraggingEnemy = false;
+                    isDraggingInteractive = false;
                 }
             }
             
@@ -340,15 +427,31 @@ void Game::processEvents() {
                 if (event.key.code == sf::Keyboard::Num1) {
                     editorObjectType = EditorObjectType::Platform;
                     selectedEnemyIndex = -1;
+                    selectedInteractiveIndex = -1;
                 } else if (event.key.code == sf::Keyboard::Num2) {
                     editorObjectType = EditorObjectType::PatrolEnemy;
                     selectedPlatformIndex = -1;
+                    selectedInteractiveIndex = -1;
                 } else if (event.key.code == sf::Keyboard::Num3) {
                     editorObjectType = EditorObjectType::FlyingEnemy;
                     selectedPlatformIndex = -1;
+                    selectedInteractiveIndex = -1;
                 } else if (event.key.code == sf::Keyboard::Num4) {
                     editorObjectType = EditorObjectType::Spike;
                     selectedPlatformIndex = -1;
+                    selectedInteractiveIndex = -1;
+                } else if (event.key.code == sf::Keyboard::Num5) {
+                    editorObjectType = EditorObjectType::Terminal;
+                    selectedPlatformIndex = -1;
+                    selectedEnemyIndex = -1;
+                } else if (event.key.code == sf::Keyboard::Num6) {
+                    editorObjectType = EditorObjectType::Door;
+                    selectedPlatformIndex = -1;
+                    selectedEnemyIndex = -1;
+                } else if (event.key.code == sf::Keyboard::Num7) {
+                    editorObjectType = EditorObjectType::Turret;
+                    selectedPlatformIndex = -1;
+                    selectedEnemyIndex = -1;
                 }
             }
 
@@ -367,6 +470,9 @@ void Game::processEvents() {
                 } else if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(enemies.size())) {
                     enemies.erase(enemies.begin() + selectedEnemyIndex);
                     selectedEnemyIndex = -1;
+                } else if (selectedInteractiveIndex >= 0 && selectedInteractiveIndex < static_cast<int>(interactiveObjects.size())) {
+                    interactiveObjects.erase(interactiveObjects.begin() + selectedInteractiveIndex);
+                    selectedInteractiveIndex = -1;
                 }
             }
             // Reload level from file (F5)
@@ -375,8 +481,10 @@ void Game::processEvents() {
                     loadLevel(currentLevelPath);
                     selectedPlatformIndex = -1;
                     selectedEnemyIndex = -1;
+                    selectedInteractiveIndex = -1;
                     isDraggingPlatform = false;
                     isDraggingEnemy = false;
+                    isDraggingInteractive = false;
                 }
             }
             // Change platform type with T key
@@ -557,17 +665,9 @@ void Game::update(float dt) {
             loadLevel(nextLevelPath);
             nextLevelPath = "";
             
-            if (pendingSpawnEdge == 1) {
-                if (levelHistoryPos > 0) {
-                    levelHistoryPos--;
-                }
-            } else {
-                if (!previousLevelPath.empty() && (levelHistory.empty() || levelHistory.back() != previousLevelPath)) {
-                    levelHistory.push_back(previousLevelPath);
-                }
-                levelHistory.push_back(currentLevelPath);
-                levelHistoryPos = static_cast<int>(levelHistory.size()) - 1;
-            }
+            // Reset portal spawn info after level load
+            pendingPortalSpawnDirection = "default";
+            pendingPortalCustomSpawn = false;
             
             auto it = levelCheckpoints.find(currentLevelPath);
             if (it != levelCheckpoints.end() && !it->second.empty()) {
@@ -575,6 +675,13 @@ void Game::update(float dt) {
                 for (auto& checkpoint : checkpoints) {
                     if (checkpoint->getId() == activeCheckpointId) {
                         checkpoint->activate();
+                        // Update spawn point for all players
+                        sf::Vector2f cpPos = checkpoint->getSpawnPosition();
+                        for (auto& p : players) {
+                            if (p) {
+                                p->setSpawnPoint(cpPos.x, cpPos.y);
+                            }
+                        }
                         break;
                     }
                 }
@@ -653,6 +760,20 @@ void Game::update(float dt) {
     }
     else if (!player->isDead() && playerWasDead) {
         playerWasDead = false;
+        
+        // After respawn, check if we need to load the checkpoint level
+        // (if current level has no checkpoint and global checkpoint is from another level)
+        if (!currentLevelPath.empty()) {
+            auto levelCpIt = levelCheckpoints.find(currentLevelPath);
+            bool hasLevelCheckpoint = (levelCpIt != levelCheckpoints.end() && !levelCpIt->second.empty());
+            
+            if (!hasLevelCheckpoint && !lastGlobalCheckpointLevel.empty() && 
+                lastGlobalCheckpointLevel != currentLevelPath && !lastGlobalCheckpointId.empty()) {
+                // Load the checkpoint level and respawn there
+                loadLevel(lastGlobalCheckpointLevel);
+                return;
+            }
+        }
     }
 
     // Update checkpoints
@@ -666,11 +787,22 @@ void Game::update(float dt) {
             if (!currentLevelPath.empty()) {
                 levelCheckpoints[currentLevelPath] = activeCheckpointId;
             }
-            player->setSpawnPoint(checkpoint->getSpawnPosition().x, checkpoint->getSpawnPosition().y);
+            // Update spawn point for all players
+            sf::Vector2f cpPos = checkpoint->getSpawnPosition();
+            for (auto& p : players) {
+                if (p) {
+                    p->setSpawnPoint(cpPos.x, cpPos.y);
+                }
+            }
+            
+            // Save as global last checkpoint
+            lastGlobalCheckpointLevel = currentLevelPath;
+            lastGlobalCheckpointId = activeCheckpointId;
+            lastGlobalCheckpointPos = cpPos;
+            
             audioManager->playSound("checkpoint", 70.0f);
 
             // Visual feedback
-            sf::Vector2f cpPos = checkpoint->getSpawnPosition();
             particleSystem->emitVictory(sf::Vector2f(cpPos.x + 20.0f, cpPos.y + 30.0f));
         }
     }
@@ -682,37 +814,27 @@ void Game::update(float dt) {
         }
     }
 
-    // Edge-based level transitions (screen edges act like doors)
-    if (!isTransitioning && currentLevel && !currentLevel->cameraZones.empty()) {
-        const auto& zone = currentLevel->cameraZones[0];
-        float leftEdge = zone.minX;
-        float rightEdge = zone.maxX;
-        float x = player->getPosition().x;
-        float margin = 8.0f;
-
-        // Go to previous level if player exits left and a history exists
-        if (x < leftEdge - margin && levelHistoryPos > 0) {
-            goBackOneLevel();
-            return;
-        }
-
-        // Go to next level if player exits right and there is a next level defined
-        if (x > rightEdge + margin) {
-            // Determine next level from level graph if available
-            if (currentLevel && !currentLevel->nextLevels.empty()) {
-                std::string nextLevelId = currentLevel->nextLevels[0];
-                nextLevelPath = "assets/levels/" + nextLevelId + ".json";
-            } else {
-                // Fallback: legacy linear progression
-                currentLevelNumber++;
-                nextLevelPath = "assets/levels/level" + std::to_string(currentLevelNumber) + ".json";
-            }
-
-            pendingSpawnEdge = 0; // appear at left edge of next level
+    // Portal-based level transitions (check if player is in a portal zone)
+    if (!isTransitioning && currentLevel) {
+        // Reuse playerBounds from above
+        for (const auto& portal : currentLevel->portals) {
+            sf::FloatRect portalBounds(portal.x, portal.y, portal.width, portal.height);
+            
+            // Check if player is inside portal
+            if (portalBounds.intersects(playerBounds)) {
+                // Found a portal, transition to target level
+                std::string targetPath = "assets/levels/" + portal.targetLevel + ".json";
+                
+                // Store portal info for spawn positioning
+                pendingPortalSpawnDirection = portal.spawnDirection;
+                pendingPortalCustomSpawn = portal.useCustomSpawn;
+                pendingPortalCustomSpawnPos = portal.customSpawnPos;
+                
+                nextLevelPath = targetPath;
             isTransitioning = true;
-            // Fade out encore plus long (transition plus douce)
-            screenTransition->startFadeOut(1.3f);
+                screenTransition->startFadeOut(0.5f);
             return;
+            }
         }
     }
 
@@ -866,7 +988,7 @@ void Game::update(float dt) {
                     // Mark projectile as dead after hitting enemy
                     // (we'll add a hit flag later if needed to continue through enemies)
                 }
-                }
+            }
             }
         }
     }
@@ -881,13 +1003,85 @@ void Game::update(float dt) {
         }
     }
 
-    // Update enemies
+    // Handle player attack
+    if (player && player->getAttackCooldownRemaining() > 0.0f && 
+        player->getAttackCooldownRemaining() >= Config::ATTACK_COOLDOWN - 0.1f) {
+        // Player just attacked, check for enemies in kick range (rectangle in front)
+        sf::Vector2f playerPos = player->getPosition();
+        sf::Vector2f playerSize = player->getSize();
+        sf::Vector2f playerCenter = sf::Vector2f(
+            playerPos.x + playerSize.x / 2.0f,
+            playerPos.y + playerSize.y / 2.0f
+        );
+        
+        // Determine attack hitbox position based on facing direction
+        int facingDir = player->getFacingDirection();
+        sf::FloatRect attackHitbox;
+        
+        if (facingDir == 1) { // Facing right (east)
+            attackHitbox.left = playerCenter.x + Config::ATTACK_DISTANCE - Config::ATTACK_WIDTH / 2.0f;
+            attackHitbox.top = playerCenter.y - Config::ATTACK_HEIGHT / 2.0f;
+            attackHitbox.width = Config::ATTACK_WIDTH;
+            attackHitbox.height = Config::ATTACK_HEIGHT;
+        } else if (facingDir == -1) { // Facing left (west)
+            attackHitbox.left = playerCenter.x - Config::ATTACK_DISTANCE - Config::ATTACK_WIDTH / 2.0f;
+            attackHitbox.top = playerCenter.y - Config::ATTACK_HEIGHT / 2.0f;
+            attackHitbox.width = Config::ATTACK_WIDTH;
+            attackHitbox.height = Config::ATTACK_HEIGHT;
+        } else if (facingDir == 2) { // Facing up (north)
+            attackHitbox.left = playerCenter.x - Config::ATTACK_WIDTH / 2.0f;
+            attackHitbox.top = playerCenter.y - Config::ATTACK_DISTANCE - Config::ATTACK_HEIGHT / 2.0f;
+            attackHitbox.width = Config::ATTACK_WIDTH;
+            attackHitbox.height = Config::ATTACK_HEIGHT;
+        } else { // Facing down (south) or default
+            attackHitbox.left = playerCenter.x - Config::ATTACK_WIDTH / 2.0f;
+            attackHitbox.top = playerCenter.y + Config::ATTACK_DISTANCE - Config::ATTACK_HEIGHT / 2.0f;
+            attackHitbox.width = Config::ATTACK_WIDTH;
+            attackHitbox.height = Config::ATTACK_HEIGHT;
+        }
+        
+        for (auto& enemy : enemies) {
+            if (!enemy || !enemy->isAlive()) {
+                continue;
+            }
+            
+            // Don't attack stationary enemies (spikes/traps)
+            if (enemy->getType() == EnemyType::Stationary) {
+                continue;
+            }
+            
+            sf::FloatRect enemyBounds = enemy->getBounds();
+            
+            // Check if enemy hitbox intersects with attack hitbox
+            if (attackHitbox.intersects(enemyBounds)) {
+                // Enemy is in attack range, kill it
+                sf::Vector2f enemyPos = enemy->getPosition();
+                sf::Vector2f enemySize = enemy->getSize();
+                sf::Vector2f enemyCenter = sf::Vector2f(
+                    enemyPos.x + enemySize.x / 2.0f,
+                    enemyPos.y + enemySize.y / 2.0f
+                );
+                
+                enemy->kill();
+                
+                // Effects
+                particleSystem->emitDeath(sf::Vector2f(enemyCenter.x, enemyCenter.y));
+                audioManager->playSound("death", 60.0f);
+                cameraShake->shakeLight();
+            }
+        }
+    }
+
+    // Update enemies (skip movement in editor mode)
     for (auto& enemy : enemies) {
         if (!enemy || !enemy->isAlive()) {
             continue; // Skip null or dead enemies (will be removed later)
         }
 
+        // Don't update enemy movement in editor mode
+        if (gameState != GameState::Editor) {
         enemy->update(dt);
+        }
 
         // Check collision with player
         if (player && player->getBounds().intersects(enemy->getBounds())) {
@@ -1047,11 +1241,11 @@ void Game::render() {
             checkpoint->draw(window);
         }
 
-        // for (auto& interactive : interactiveObjects) {
-        //     if (interactive) {
-        //         interactive->draw(window);
-        //     }
-        // }
+        for (auto& interactive : interactiveObjects) {
+            if (interactive) {
+                interactive->draw(window);
+            }
+        }
 
         for (auto& enemy : enemies) {
             if (enemy && enemy->isAlive()) {
@@ -1070,6 +1264,12 @@ void Game::render() {
         if (player && !isTransitioning && postTransitionHideFrames == 0) {
             player->draw(window);
         }
+        
+        // Draw hitboxes if enabled
+        if (showHitboxes) {
+            HitboxDebug::drawHitboxes(window, player, enemies, platforms, checkpoints, interactiveObjects, 
+                                      currentLevel ? currentLevel->portals : std::vector<Portal>());
+        }
 
         window.setView(window.getDefaultView());
 
@@ -1086,6 +1286,7 @@ void Game::render() {
 
     window.display();
 }
+
 
 void Game::drawParallaxBackground(sf::RenderWindow& renderWindow) {
     if (!currentLevel || !camera) return;
@@ -1178,43 +1379,70 @@ void Game::loadLevel(const std::string& levelPath) {
             enemies = std::move(currentLevel->enemies);
             
         kineticWaveProjectiles.clear();
-
-        // Reset all players to level start position (or edge spawn if requested)
-        if (!players.empty()) {
-            sf::Vector2f spawnPos = currentLevel->startPosition;
-            if (pendingSpawnEdge != -1 && !currentLevel->cameraZones.empty()) {
-                const auto& zone = currentLevel->cameraZones[0];
-                if (pendingSpawnEdge == 0) {
-                    // left edge spawn
-                    spawnPos.x = zone.minX + 80.0f;
-                } else if (pendingSpawnEdge == 1) {
-                    // right edge spawn
-                    spawnPos.x = zone.maxX - 80.0f;
-                }
-                // y stays from level start to ensure on ground
-            }
-            for (auto& p : players) {
-                if (p) {
-                    p->setPosition(spawnPos.x, spawnPos.y);
-                    p->setSpawnPoint(spawnPos.x, spawnPos.y);
-                    p->setVelocity(sf::Vector2f(0.0f, 0.0f));
-                }
-            }
-            pendingSpawnEdge = -1; // consume
-        }
-
-        // Restore checkpoint state for this level
+        
+        // Determine spawn position: use checkpoint if available, otherwise level start or edge spawn
+        sf::Vector2f spawnPos = currentLevel->startPosition;
+        bool useCheckpointSpawn = false;
+        
+        // First, check if this level has an activated checkpoint
         auto it = levelCheckpoints.find(currentLevelPath);
         if (it != levelCheckpoints.end() && !it->second.empty()) {
+            // This level has an activated checkpoint, use it
             activeCheckpointId = it->second;
             for (auto& checkpoint : checkpoints) {
                 if (checkpoint->getId() == activeCheckpointId) {
                     checkpoint->activate();
+                    spawnPos = checkpoint->getSpawnPosition();
+                    useCheckpointSpawn = true;
                     break;
                 }
             }
-        } else {
+        } else if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty() && lastGlobalCheckpointLevel != currentLevelPath) {
+            // No checkpoint activated in this level, and global checkpoint is from a different level
+            // Don't use global checkpoint position here (it's in another level)
+            // Just spawn at level start, and respawn will handle loading the checkpoint level
+            spawnPos = currentLevel->startPosition;
             activeCheckpointId.clear();
+            // Don't set spawn point to global checkpoint position (it's in another level)
+            // The respawn system will handle loading the checkpoint level when needed
+        } else {
+            // No checkpoint at all, use level start
+            activeCheckpointId.clear();
+        }
+        
+        // Override with portal spawn if requested (for portal transitions)
+        if (pendingPortalCustomSpawn) {
+            spawnPos = pendingPortalCustomSpawnPos;
+            useCheckpointSpawn = false; // Custom spawn takes priority
+        } else if (pendingPortalSpawnDirection != "default" && !currentLevel->cameraZones.empty()) {
+                const auto& zone = currentLevel->cameraZones[0];
+            if (pendingPortalSpawnDirection == "left") {
+                    spawnPos.x = zone.minX + 80.0f;
+            } else if (pendingPortalSpawnDirection == "right") {
+                    spawnPos.x = zone.maxX - 80.0f;
+            } else if (pendingPortalSpawnDirection == "top") {
+                spawnPos.y = zone.minY + 80.0f;
+            } else if (pendingPortalSpawnDirection == "bottom") {
+                spawnPos.y = zone.maxY - 80.0f;
+                }
+            // Keep other coordinate from level start to ensure on ground/platform
+            useCheckpointSpawn = false; // Portal spawn takes priority
+            }
+        
+        // Reset all players to spawn position
+        if (!players.empty()) {
+            for (auto& p : players) {
+                if (p) {
+                    p->setPosition(spawnPos.x, spawnPos.y);
+                    // Set spawn point: use level checkpoint if available, otherwise level start
+                    // (Global checkpoint will be handled during respawn by loading the checkpoint level)
+                    p->setSpawnPoint(spawnPos.x, spawnPos.y);
+                    p->setVelocity(sf::Vector2f(0.0f, 0.0f));
+                }
+            }
+            // Reset portal spawn info after positioning
+            pendingPortalSpawnDirection = "default";
+            pendingPortalCustomSpawn = false;
         }
 
         // Reset level state
@@ -1272,13 +1500,9 @@ void Game::loadLevel(const std::string& levelPath) {
 }
 
 void Game::goBackOneLevel() {
-    if (levelHistoryPos <= 0 || isTransitioning) {
-        return;
-    }
-    nextLevelPath = levelHistory[levelHistoryPos - 1];
-    pendingSpawnEdge = 1;
-    isTransitioning = true;
-    screenTransition->startFadeOut(1.3f);
+    // Deprecated: Use portals instead for level navigation
+    // This function is kept for backward compatibility but does nothing
+    // Level navigation is now handled by portals defined in level JSON
 }
 
 void Game::startNewGame() {
@@ -1288,16 +1512,10 @@ void Game::startNewGame() {
     saveData = SaveData();
     saveData.currentLevel = 1;
     currentLevelNumber = 1;
-    levelHistory.clear();
-    levelHistoryPos = -1;
     currentLevelPath.clear();
 
     // Load level first
     loadLevel();
-    if (!currentLevelPath.empty()) {
-        levelHistory.push_back(currentLevelPath);
-        levelHistoryPos = 0;
-    }
 
     // Create all 3 characters at level start position
     sf::Vector2f startPos = currentLevel ? currentLevel->startPosition : sf::Vector2f(100.0f, 100.0f);
@@ -1391,6 +1609,13 @@ void Game::continueGame() {
                 for (auto& checkpoint : checkpoints) {
                     if (checkpoint->getId() == activeCheckpointId) {
                         checkpoint->activate();
+                        // Update spawn point for all players
+                        sf::Vector2f cpPos = checkpoint->getSpawnPosition();
+                        for (auto& p : players) {
+                            if (p) {
+                                p->setSpawnPoint(cpPos.x, cpPos.y);
+                            }
+                        }
                         break;
                     }
                 }
@@ -1516,7 +1741,8 @@ void Game::setState(GameState newState) {
 sf::Vector2f Game::screenToWorld(const sf::Vector2f& screenPos) {
     if (!camera) return screenPos;
     
-    sf::View view = window.getView();
+    // Use camera's view directly to ensure correct coordinate conversion
+    const sf::View& view = camera->getView();
     sf::Vector2f worldPos = window.mapPixelToCoords(sf::Vector2i(static_cast<int>(screenPos.x), static_cast<int>(screenPos.y)), view);
     return worldPos;
 }
@@ -1532,6 +1758,8 @@ void Game::updateEditor(float dt) {
     Player* player = getActivePlayer();
     if (player) {
         camera->update(player->getPosition(), dt);
+        // Ensure camera view is applied for correct coordinate conversion during dragging
+        camera->apply(window);
     }
 
     // Handle dragging
@@ -1548,16 +1776,31 @@ void Game::updateEditor(float dt) {
         sf::Vector2f worldPos = screenToWorld(sf::Vector2f(static_cast<float>(mousePixelPos.x), static_cast<float>(mousePixelPos.y)));
         
         Enemy* enemy = enemies[selectedEnemyIndex].get();
-        sf::Vector2f oldPos = enemy->getPosition();
-        enemy->setPosition(worldPos.x - dragOffset.x, worldPos.y - dragOffset.y);
+        sf::Vector2f newPos = sf::Vector2f(worldPos.x - dragOffset.x, worldPos.y - dragOffset.y);
+        enemy->setPosition(newPos.x, newPos.y);
         
-        // Update patrol bounds to follow the enemy position
-        sf::Vector2f newPos = enemy->getPosition();
-        float distanceX = newPos.x - oldPos.x;
+        // Recalculate patrol bounds centered on the new enemy position
         float currentDistance = enemy->getPatrolDistance();
-        float centerX = (enemy->getLeftBound() + enemy->getRightBound()) / 2.0f;
-        float newCenterX = centerX + distanceX;
-        enemy->setPatrolBounds(newCenterX - currentDistance / 2.0f, newCenterX + currentDistance / 2.0f);
+        enemy->setPatrolBounds(newPos.x - currentDistance / 2.0f, newPos.x + currentDistance / 2.0f);
+        
+        // For FlyingEnemy with vertical patrol, also update vertical bounds
+        if (FlyingEnemy* flyingEnemy = dynamic_cast<FlyingEnemy*>(enemy)) {
+            float topBound = flyingEnemy->getTopBound();
+            float bottomBound = flyingEnemy->getBottomBound();
+            if (topBound != 0.0f || bottomBound != 0.0f) {
+                // Has vertical patrol, update it too
+                float verticalDistance = bottomBound - topBound;
+                flyingEnemy->setVerticalPatrolBounds(newPos.y - verticalDistance / 2.0f, newPos.y + verticalDistance / 2.0f);
+            }
+        }
+    }
+    
+    if (isDraggingInteractive && selectedInteractiveIndex >= 0 && selectedInteractiveIndex < static_cast<int>(interactiveObjects.size())) {
+        sf::Vector2i mousePixelPos = sf::Mouse::getPosition(window);
+        sf::Vector2f worldPos = screenToWorld(sf::Vector2f(static_cast<float>(mousePixelPos.x), static_cast<float>(mousePixelPos.y)));
+        
+        InteractiveObject* obj = interactiveObjects[selectedInteractiveIndex].get();
+        obj->setPosition(worldPos.x - dragOffset.x, worldPos.y - dragOffset.y);
     }
 
     // Camera movement with arrow keys (move player to move camera)
@@ -1630,27 +1873,59 @@ void Game::renderEditor() {
         
         // Draw patrol zone for patrol and flying enemies
         if (enemy->getType() == EnemyType::Patrol || enemy->getType() == EnemyType::Flying) {
-            float leftBound = enemy->getLeftBound();
-            float rightBound = enemy->getRightBound();
             sf::Vector2f pos = enemy->getPosition();
             
-            // Draw patrol zone as a line
-            sf::RectangleShape patrolLine;
-            patrolLine.setSize(sf::Vector2f(rightBound - leftBound, 2.0f));
-            patrolLine.setPosition(leftBound, pos.y - 40.0f);
-            patrolLine.setFillColor(sf::Color(255, 255, 0, 100)); // Yellow, semi-transparent
-            window.draw(patrolLine);
+            // Check if it's a FlyingEnemy with vertical patrol
+            FlyingEnemy* flyingEnemy = dynamic_cast<FlyingEnemy*>(enemy);
+            bool isVerticalPatrol = false;
+            float topBound = 0.0f, bottomBound = 0.0f;
             
-            // Draw bounds markers
-            sf::CircleShape leftMarker(3.0f);
-            leftMarker.setPosition(leftBound - 3.0f, pos.y - 41.0f);
-            leftMarker.setFillColor(sf::Color::Yellow);
-            window.draw(leftMarker);
+            if (flyingEnemy) {
+                topBound = flyingEnemy->getTopBound();
+                bottomBound = flyingEnemy->getBottomBound();
+                isVerticalPatrol = (topBound != 0.0f || bottomBound != 0.0f);
+            }
             
-            sf::CircleShape rightMarker(3.0f);
-            rightMarker.setPosition(rightBound - 3.0f, pos.y - 41.0f);
-            rightMarker.setFillColor(sf::Color::Yellow);
-            window.draw(rightMarker);
+            if (isVerticalPatrol) {
+                // Draw vertical patrol zone
+                sf::RectangleShape patrolLine;
+                patrolLine.setSize(sf::Vector2f(2.0f, bottomBound - topBound));
+                patrolLine.setPosition(pos.x - 40.0f, topBound);
+                patrolLine.setFillColor(sf::Color(255, 255, 0, 100)); // Yellow, semi-transparent
+                window.draw(patrolLine);
+                
+                // Draw bounds markers
+                sf::CircleShape topMarker(3.0f);
+                topMarker.setPosition(pos.x - 41.0f, topBound - 3.0f);
+                topMarker.setFillColor(sf::Color::Yellow);
+                window.draw(topMarker);
+                
+                sf::CircleShape bottomMarker(3.0f);
+                bottomMarker.setPosition(pos.x - 41.0f, bottomBound - 3.0f);
+                bottomMarker.setFillColor(sf::Color::Yellow);
+                window.draw(bottomMarker);
+            } else {
+                // Draw horizontal patrol zone
+                float leftBound = enemy->getLeftBound();
+                float rightBound = enemy->getRightBound();
+                
+                sf::RectangleShape patrolLine;
+                patrolLine.setSize(sf::Vector2f(rightBound - leftBound, 2.0f));
+                patrolLine.setPosition(leftBound, pos.y - 40.0f);
+                patrolLine.setFillColor(sf::Color(255, 255, 0, 100)); // Yellow, semi-transparent
+                window.draw(patrolLine);
+                
+                // Draw bounds markers
+                sf::CircleShape leftMarker(3.0f);
+                leftMarker.setPosition(leftBound - 3.0f, pos.y - 41.0f);
+                leftMarker.setFillColor(sf::Color::Yellow);
+                window.draw(leftMarker);
+                
+                sf::CircleShape rightMarker(3.0f);
+                rightMarker.setPosition(rightBound - 3.0f, pos.y - 41.0f);
+                rightMarker.setFillColor(sf::Color::Yellow);
+                window.draw(rightMarker);
+            }
         }
         
         // Highlight selected enemy
@@ -1681,6 +1956,41 @@ void Game::renderEditor() {
             window.draw(indexText);
         }
     }
+    
+    // Draw interactive objects
+    for (size_t i = 0; i < interactiveObjects.size(); ++i) {
+        interactiveObjects[i]->draw(window);
+        
+        // Highlight selected interactive object
+        if (static_cast<int>(i) == selectedInteractiveIndex) {
+            sf::FloatRect bounds = interactiveObjects[i]->getBounds();
+            sf::RectangleShape outline;
+            outline.setSize(sf::Vector2f(bounds.width, bounds.height));
+            outline.setPosition(bounds.left, bounds.top);
+            outline.setFillColor(sf::Color::Transparent);
+            outline.setOutlineColor(sf::Color::Magenta);
+            outline.setOutlineThickness(2.0f);
+            window.draw(outline);
+        }
+        
+        // Draw interactive object index and type
+        if (editorFont.getInfo().family != "") {
+            sf::Text indexText;
+            indexText.setFont(editorFont);
+            std::string typeStr = "T";
+            switch (interactiveObjects[i]->getType()) {
+                case InteractiveType::Terminal: typeStr = "Term"; break;
+                case InteractiveType::Door: typeStr = "Door"; break;
+                case InteractiveType::Turret: typeStr = "Turr"; break;
+            }
+            indexText.setString("I" + std::to_string(i) + " " + typeStr);
+            indexText.setCharacterSize(12);
+            indexText.setFillColor(sf::Color::Magenta);
+            sf::FloatRect bounds = interactiveObjects[i]->getBounds();
+            indexText.setPosition(bounds.left + bounds.width / 2.0f - 25.0f, bounds.top - 15.0f);
+            window.draw(indexText);
+        }
+    }
 
     // Draw checkpoints
     for (auto& checkpoint : checkpoints) {
@@ -1707,11 +2017,16 @@ void Game::renderEditor() {
             case EditorObjectType::PatrolEnemy: objectTypeStr = "PatrolEnemy"; break;
             case EditorObjectType::FlyingEnemy: objectTypeStr = "FlyingEnemy"; break;
             case EditorObjectType::Spike: objectTypeStr = "Spike"; break;
+            case EditorObjectType::Terminal: objectTypeStr = "Terminal"; break;
+            case EditorObjectType::Door: objectTypeStr = "Door"; break;
+            case EditorObjectType::Turret: objectTypeStr = "Turret"; break;
         }
         
         std::string info = "MODE EDITEUR\n";
         info += "F1: Toggle Editor\n";
-        info += "1-4: Type objet (" + objectTypeStr + ")\n";
+        info += "1-7: Type objet (" + objectTypeStr + ")\n";
+        info += "  1=Platform 2=Patrol 3=Flying 4=Spike\n";
+        info += "  5=Terminal 6=Door 7=Turret\n";
         info += "Clic Gauche: Placer/Selectionner\n";
         info += "Clic Droit: Supprimer\n";
         info += "Delete: Supprimer selectionnee\n";
@@ -1728,7 +2043,8 @@ void Game::renderEditor() {
             }
         }
         info += "Plateformes: " + std::to_string(platforms.size()) + "\n";
-        info += "Ennemis: " + std::to_string(enemies.size());
+        info += "Ennemis: " + std::to_string(enemies.size()) + "\n";
+        info += "Objets interactifs: " + std::to_string(interactiveObjects.size());
         
         editorText.setString(info);
         window.draw(editorText);
@@ -1836,8 +2152,16 @@ void Game::saveLevelToFile() {
     }
 
     nlohmann::json j;
-    file >> j;
-    file.close();
+    try {
+        file >> j;
+        file.close();
+    } catch (const std::exception& e) {
+        std::cout << "Erreur lors du parsing JSON: " << e.what() << "\n";
+        std::cout << "Utilisation du fallback manuel\n";
+        file.close();
+        // Fall through to fallback code below
+        goto fallback_save;
+    }
 
     // Update platforms array
     j["platforms"] = nlohmann::json::array();
@@ -1884,6 +2208,36 @@ void Game::saveLevelToFile() {
         j["enemies"].push_back(e);
         std::cout << "Ennemi " << i << " sauvegarde avec type: " << e["type"].get<std::string>() << "\n";
     }
+    
+    // Update interactiveObjects array
+    j["interactiveObjects"] = nlohmann::json::array();
+    std::cout << "Sauvegarde de " << interactiveObjects.size() << " objets interactifs\n";
+    for (size_t i = 0; i < interactiveObjects.size(); ++i) {
+        const auto& obj = interactiveObjects[i];
+        sf::Vector2f pos = obj->getPosition();
+        sf::Vector2f size = obj->getSize();
+        nlohmann::json io;
+        io["x"] = pos.x;
+        io["y"] = pos.y;
+        io["width"] = size.x;
+        io["height"] = size.y;
+        io["id"] = obj->getId();
+        
+        std::string typeStr = "terminal";
+        switch (obj->getType()) {
+            case InteractiveType::Terminal: typeStr = "terminal"; break;
+            case InteractiveType::Door: typeStr = "door"; break;
+            case InteractiveType::Turret: typeStr = "turret"; break;
+        }
+        io["type"] = typeStr;
+        j["interactiveObjects"].push_back(io);
+        std::cout << "Objet interactif " << i << " sauvegarde: type=" << typeStr << ", x=" << pos.x << ", y=" << pos.y << ", id=" << obj->getId() << "\n";
+    }
+    
+    // Preserve portals array - don't modify them, just keep them as they are
+    // Portals are read-only in editor - they should be edited manually in JSON
+    // If portals don't exist in the JSON, we don't add them (keep them absent)
+    // If they exist, they will be preserved automatically since we don't touch j["portals"]
 
     // Save back to file
     std::ofstream outFile(savePath);
@@ -1909,6 +2263,8 @@ void Game::saveLevelToFile() {
     saveMessageTimer = 2.0f;
     saveMessageText.setString("Niveau sauvegarde !");
     saveMessageText.setFillColor(sf::Color::Green);
+    return; // Exit early if JSON save succeeded
+fallback_save:
 #else
     // Fallback: manual JSON writing
     std::ifstream inFile(savePath);
@@ -2062,6 +2418,96 @@ void Game::saveLevelToFile() {
             content.insert(insertPos + 1, newEnemies);
         }
     }
+    
+    // Also update interactiveObjects array if it exists
+    size_t interactivesStart = content.find("\"interactiveObjects\"");
+    if (interactivesStart != std::string::npos) {
+        size_t interactivesArrayStart = content.find("[", interactivesStart);
+        if (interactivesArrayStart != std::string::npos) {
+            // Find the matching closing bracket
+            size_t interactivesArrayEnd = interactivesArrayStart + 1;
+            int interactivesBracketDepth = 1;
+            while (interactivesArrayEnd < content.length() && interactivesBracketDepth > 0) {
+                if (content[interactivesArrayEnd] == '[') interactivesBracketDepth++;
+                else if (content[interactivesArrayEnd] == ']') interactivesBracketDepth--;
+                if (interactivesBracketDepth > 0) interactivesArrayEnd++;
+                else break; // Found matching closing bracket
+            }
+            
+            // Build new interactiveObjects array
+            std::string newInteractives = "[\n";
+            for (size_t i = 0; i < interactiveObjects.size(); ++i) {
+                sf::Vector2f pos = interactiveObjects[i]->getPosition();
+                sf::Vector2f size = interactiveObjects[i]->getSize();
+                std::string typeStr = "terminal";
+                switch (interactiveObjects[i]->getType()) {
+                    case InteractiveType::Terminal: typeStr = "terminal"; break;
+                    case InteractiveType::Door: typeStr = "door"; break;
+                    case InteractiveType::Turret: typeStr = "turret"; break;
+                }
+                
+                // Get ID and clean it (remove any extra quotes)
+                std::string id = interactiveObjects[i]->getId();
+                // Remove any leading/trailing quotes that might be in the ID
+                while (!id.empty() && (id.front() == '"' || id.front() == '\'')) {
+                    id = id.substr(1);
+                }
+                while (!id.empty() && (id.back() == '"' || id.back() == '\'')) {
+                    id = id.substr(0, id.length() - 1);
+                }
+                
+                newInteractives += "    { \"type\": \"" + typeStr + "\", \"x\": " + std::to_string(static_cast<int>(pos.x)) + 
+                                 ", \"y\": " + std::to_string(static_cast<int>(pos.y)) +
+                                 ", \"width\": " + std::to_string(static_cast<int>(size.x)) +
+                                 ", \"height\": " + std::to_string(static_cast<int>(size.y)) +
+                                 ", \"id\": \"" + id + "\" }";
+                if (i < interactiveObjects.size() - 1) {
+                    newInteractives += ",";
+                }
+                newInteractives += "\n";
+            }
+            newInteractives += "  ]";
+            
+            // Replace the array (interactivesArrayEnd points to the character after ']')
+            size_t replaceLength = interactivesArrayEnd - interactivesArrayStart + 1;
+            if (interactivesArrayStart + replaceLength > content.length()) {
+                replaceLength = content.length() - interactivesArrayStart;
+            }
+            content.replace(interactivesArrayStart, replaceLength, newInteractives);
+        }
+    } else {
+        // Insert interactiveObjects array after enemies
+        size_t insertPos = content.find_last_of("]");
+        if (insertPos != std::string::npos) {
+            std::string newInteractives = ",\n  \"interactiveObjects\": [\n";
+            for (size_t i = 0; i < interactiveObjects.size(); ++i) {
+                sf::Vector2f pos = interactiveObjects[i]->getPosition();
+                sf::Vector2f size = interactiveObjects[i]->getSize();
+                std::string typeStr = "terminal";
+                switch (interactiveObjects[i]->getType()) {
+                    case InteractiveType::Terminal: typeStr = "terminal"; break;
+                    case InteractiveType::Door: typeStr = "door"; break;
+                    case InteractiveType::Turret: typeStr = "turret"; break;
+                }
+                
+                newInteractives += "    { \"type\": \"" + typeStr + "\", \"x\": " + std::to_string(static_cast<int>(pos.x)) + 
+                                 ", \"y\": " + std::to_string(static_cast<int>(pos.y)) +
+                                 ", \"width\": " + std::to_string(static_cast<int>(size.x)) +
+                                 ", \"height\": " + std::to_string(static_cast<int>(size.y)) +
+                                 ", \"id\": \"" + interactiveObjects[i]->getId() + "\" }";
+                if (i < interactiveObjects.size() - 1) {
+                    newInteractives += ",";
+                }
+                newInteractives += "\n";
+            }
+            newInteractives += "  ]";
+            content.insert(insertPos + 1, newInteractives);
+        }
+    }
+    
+    // Preserve portals array (don't modify it, just ensure it exists if it was there)
+    // Portals are read-only in editor - they should be edited manually in JSON
+    // The existing portals in the file will be preserved as-is since we don't touch them
 
     // Write back to file
     std::ofstream outFile(savePath);

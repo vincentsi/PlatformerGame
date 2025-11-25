@@ -30,6 +30,12 @@ InteractiveObject::InteractiveObject(float x, float y, float width, float height
     shape.setOutlineThickness(2.0f);
 }
 
+void InteractiveObject::setPosition(float x, float y) {
+    position.x = x;
+    position.y = y;
+    shape.setPosition(position);
+}
+
 void InteractiveObject::update(float dt) {
     (void)dt; // Not used for now, but kept for future animations
     // Update visual state based on activation

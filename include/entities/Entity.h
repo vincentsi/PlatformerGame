@@ -11,7 +11,7 @@ public:
     virtual void draw(sf::RenderWindow& window) = 0;
 
     // Getters
-    sf::FloatRect getBounds() const;
+    virtual sf::FloatRect getBounds() const;
     const sf::Vector2f& getPosition() const { return position; }
     const sf::Vector2f& getVelocity() const { return velocity; }
     const sf::Vector2f& getSize() const { return size; }
