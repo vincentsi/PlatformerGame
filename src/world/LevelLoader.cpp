@@ -154,16 +154,6 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
             }
         }
 
-        // Goal zone
-        if (j.contains("goalZone") && j["goalZone"].is_object()) {
-            const auto& g = j["goalZone"];
-            float x = g.value("x", 0.0f);
-            float y = g.value("y", 0.0f);
-            float w = g.value("width", 0.0f);
-            float h = g.value("height", 0.0f);
-            levelData->goalZone = std::make_unique<GoalZone>(x, y, w, h);
-        }
-
         // Camera zones
         if (j.contains("cameraZones") && j["cameraZones"].is_array()) {
             for (const auto& cz : j["cameraZones"]) {
@@ -532,30 +522,6 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
         }
     }
 
-    // Parse goalZone
-    size_t goalStart = content.find("\"goalZone\"");
-    if (goalStart != std::string::npos) {
-        size_t objStart = content.find("{", goalStart);
-        size_t objEnd = content.find("}", objStart);
-
-        if (objStart != std::string::npos && objEnd != std::string::npos) {
-            std::string obj = content.substr(objStart, objEnd - objStart + 1);
-
-            std::string xVal = extractValue(obj, "x");
-            std::string yVal = extractValue(obj, "y");
-            std::string wVal = extractValue(obj, "width");
-            std::string hVal = extractValue(obj, "height");
-
-            if (!xVal.empty() && !yVal.empty() && !wVal.empty() && !hVal.empty()) {
-                float x = parseFloat(xVal);
-                float y = parseFloat(yVal);
-                float w = parseFloat(wVal);
-                float h = parseFloat(hVal);
-                levelData->goalZone = std::make_unique<GoalZone>(x, y, w, h);
-            }
-        }
-    }
-
     // Parse camera zones
     size_t cameraStart = content.find("\"cameraZones\"");
     size_t cameraEnd = content.find("],", cameraStart);
@@ -682,8 +648,6 @@ std::unique_ptr<LevelData> LevelLoader::createDefaultLevel() {
     levelData->platforms.push_back(std::make_unique<Platform>(0.0f, 550.0f, 800.0f, 50.0f));
     levelData->platforms.push_back(std::make_unique<Platform>(900.0f, 500.0f, 200.0f, 20.0f));
     levelData->platforms.push_back(std::make_unique<Platform>(1200.0f, 450.0f, 200.0f, 20.0f));
-
-    levelData->goalZone = std::make_unique<GoalZone>(1300.0f, 370.0f, 80.0f, 80.0f);
 
     return levelData;
 }

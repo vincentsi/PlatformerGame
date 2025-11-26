@@ -49,3 +49,13 @@ sf::Vector2f Checkpoint::getSpawnPosition() const {
     // Spawn slightly to the left of checkpoint
     return sf::Vector2f(position.x - 20.0f, position.y);
 }
+
+void Checkpoint::setPosition(float x, float y) {
+    position.x = x;
+    position.y = y;
+    shape.setPosition(position);
+}
+
+sf::FloatRect Checkpoint::getBounds() const {
+    return shape.getGlobalBounds();
+}

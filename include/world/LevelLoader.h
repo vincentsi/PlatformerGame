@@ -4,7 +4,6 @@
 #include <vector>
 #include <memory>
 #include "world/Platform.h"
-#include "world/GoalZone.h"
 #include "world/Checkpoint.h"
 #include "world/InteractiveObject.h"
 #include <SFML/Graphics.hpp>
@@ -38,7 +37,6 @@ struct LevelData {
     std::vector<std::unique_ptr<Checkpoint>> checkpoints;
     std::vector<std::unique_ptr<InteractiveObject>> interactiveObjects;
     std::vector<std::unique_ptr<Enemy>> enemies;
-    std::unique_ptr<GoalZone> goalZone;
     std::vector<CameraZone> cameraZones;
     std::vector<Portal> portals;    // Portails/limites pour changer de niveau
 };

@@ -18,6 +18,9 @@ public:
     bool isActivated() const { return activated; }
 
     sf::Vector2f getSpawnPosition() const;
+    sf::Vector2f getPosition() const { return position; }
+    void setPosition(float x, float y);
+    sf::FloatRect getBounds() const;
     std::string getId() const { return id; }
 
 private:

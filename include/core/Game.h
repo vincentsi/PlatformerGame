@@ -14,7 +14,6 @@ class Enemy;
 class KineticWaveProjectile;
 class Platform;
 class Camera;
-class GoalZone;
 class Checkpoint;
 class InteractiveObject;
 struct LevelData;
@@ -71,7 +70,6 @@ private:
     std::vector<std::unique_ptr<KineticWaveProjectile>> kineticWaveProjectiles;
     std::unique_ptr<Camera> camera;
     std::unique_ptr<GameUI> gameUI;
-    std::unique_ptr<GoalZone> goalZone;
 
     // Level system
     std::unique_ptr<LevelData> currentLevel;
@@ -147,15 +145,21 @@ private:
         Spike,
         Terminal,
         Door,
-        Turret
+        Turret,
+        Checkpoint,
+        Portal
     };
     EditorObjectType editorObjectType = EditorObjectType::Platform;
     int selectedPlatformIndex = -1;
     int selectedEnemyIndex = -1;
     int selectedInteractiveIndex = -1;
+    int selectedCheckpointIndex = -1;
+    int selectedPortalIndex = -1;
     bool isDraggingPlatform = false;
     bool isDraggingEnemy = false;
     bool isDraggingInteractive = false;
+    bool isDraggingCheckpoint = false;
+    bool isDraggingPortal = false;
     sf::Vector2f dragOffset;
     sf::Font editorFont;
     sf::Text editorText;

@@ -13,7 +13,6 @@
 #include "entities/KineticWaveProjectile.h"
 #include "world/Platform.h"
 #include "world/Camera.h"
-#include "world/GoalZone.h"
 #include "world/Checkpoint.h"
 #include "world/InteractiveObject.h"
 #include "world/LevelLoader.h"
@@ -323,6 +322,88 @@ void Game::processEvents() {
                             isDraggingEnemy = false;
                             dragOffset = sf::Vector2f(0, 0);
                         }
+                    } else if (editorObjectType == EditorObjectType::Checkpoint) {
+                        // Check checkpoints
+                        for (size_t i = 0; i < checkpoints.size(); ++i) {
+                            sf::FloatRect bounds = checkpoints[i]->getBounds();
+                            if (bounds.contains(worldPos)) {
+                                selectedCheckpointIndex = static_cast<int>(i);
+                                selectedPlatformIndex = -1;
+                                selectedEnemyIndex = -1;
+                                selectedInteractiveIndex = -1;
+                                selectedPortalIndex = -1;
+                                isDraggingCheckpoint = true;
+                                isDraggingPlatform = false;
+                                isDraggingEnemy = false;
+                                isDraggingInteractive = false;
+                                isDraggingPortal = false;
+                                dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
+                                clickedObject = true;
+                                break;
+                            }
+                        }
+                        // If not clicking on checkpoint, create new one
+                        if (!clickedObject) {
+                            std::string id = "cp_" + std::to_string(checkpoints.size());
+                            checkpoints.push_back(std::make_unique<Checkpoint>(worldPos.x, worldPos.y, id));
+                            selectedCheckpointIndex = static_cast<int>(checkpoints.size() - 1);
+                            selectedPlatformIndex = -1;
+                            selectedEnemyIndex = -1;
+                            selectedInteractiveIndex = -1;
+                            selectedPortalIndex = -1;
+                            isDraggingCheckpoint = true;
+                            isDraggingPlatform = false;
+                            isDraggingEnemy = false;
+                            isDraggingInteractive = false;
+                            isDraggingPortal = false;
+                            dragOffset = sf::Vector2f(0, 0);
+                        }
+                    } else if (editorObjectType == EditorObjectType::Portal) {
+                        // Check portals
+                        if (currentLevel) {
+                            for (size_t i = 0; i < currentLevel->portals.size(); ++i) {
+                                const auto& portal = currentLevel->portals[i];
+                                sf::FloatRect bounds(portal.x, portal.y, portal.width, portal.height);
+                                if (bounds.contains(worldPos)) {
+                                    selectedPortalIndex = static_cast<int>(i);
+                                    selectedPlatformIndex = -1;
+                                    selectedEnemyIndex = -1;
+                                    selectedInteractiveIndex = -1;
+                                    selectedCheckpointIndex = -1;
+                                    isDraggingPortal = true;
+                                    isDraggingPlatform = false;
+                                    isDraggingEnemy = false;
+                                    isDraggingInteractive = false;
+                                    isDraggingCheckpoint = false;
+                                    dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
+                                    clickedObject = true;
+                                    break;
+                                }
+                            }
+                        }
+                        // If not clicking on portal, create new one
+                        if (!clickedObject && currentLevel) {
+                            Portal newPortal;
+                            newPortal.x = worldPos.x;
+                            newPortal.y = worldPos.y;
+                            newPortal.width = 20.0f;
+                            newPortal.height = 200.0f;
+                            newPortal.targetLevel = "zone1_level1";
+                            newPortal.spawnDirection = "leftbottom";
+                            newPortal.useCustomSpawn = false;
+                            currentLevel->portals.push_back(newPortal);
+                            selectedPortalIndex = static_cast<int>(currentLevel->portals.size() - 1);
+                            selectedPlatformIndex = -1;
+                            selectedEnemyIndex = -1;
+                            selectedInteractiveIndex = -1;
+                            selectedCheckpointIndex = -1;
+                            isDraggingPortal = true;
+                            isDraggingPlatform = false;
+                            isDraggingEnemy = false;
+                            isDraggingInteractive = false;
+                            isDraggingCheckpoint = false;
+                            dragOffset = sf::Vector2f(0, 0);
+                        }
                     } else {
                         // Check enemies
                         for (size_t i = 0; i < enemies.size(); ++i) {
@@ -331,9 +412,13 @@ void Game::processEvents() {
                                 selectedEnemyIndex = static_cast<int>(i);
                                 selectedPlatformIndex = -1;
                                 selectedInteractiveIndex = -1;
+                                selectedCheckpointIndex = -1;
+                                selectedPortalIndex = -1;
                                 isDraggingEnemy = true;
                                 isDraggingPlatform = false;
                                 isDraggingInteractive = false;
+                                isDraggingCheckpoint = false;
+                                isDraggingPortal = false;
                                 dragOffset = worldPos - sf::Vector2f(bounds.left, bounds.top);
                                 clickedObject = true;
                                 break;
@@ -357,9 +442,13 @@ void Game::processEvents() {
                             selectedEnemyIndex = static_cast<int>(enemies.size() - 1);
                             selectedPlatformIndex = -1;
                             selectedInteractiveIndex = -1;
+                            selectedCheckpointIndex = -1;
+                            selectedPortalIndex = -1;
                             isDraggingEnemy = true;
                             isDraggingPlatform = false;
                             isDraggingInteractive = false;
+                            isDraggingCheckpoint = false;
+                            isDraggingPortal = false;
                             dragOffset = sf::Vector2f(0, 0);
                         }
                     }
@@ -396,6 +485,39 @@ void Game::processEvents() {
                             }
                         }
                     }
+                    // Check checkpoints if nothing deleted yet
+                    if (!deleted) {
+                        for (size_t i = 0; i < checkpoints.size(); ++i) {
+                            sf::FloatRect bounds = checkpoints[i]->getBounds();
+                            if (bounds.contains(worldPos)) {
+                                checkpoints.erase(checkpoints.begin() + i);
+                                if (selectedCheckpointIndex == static_cast<int>(i)) {
+                                    selectedCheckpointIndex = -1;
+                                } else if (selectedCheckpointIndex > static_cast<int>(i)) {
+                                    selectedCheckpointIndex--;
+                                }
+                                deleted = true;
+                                break;
+                            }
+                        }
+                    }
+                    // Check portals if nothing deleted yet
+                    if (!deleted && currentLevel) {
+                        for (size_t i = 0; i < currentLevel->portals.size(); ++i) {
+                            const auto& portal = currentLevel->portals[i];
+                            sf::FloatRect bounds(portal.x, portal.y, portal.width, portal.height);
+                            if (bounds.contains(worldPos)) {
+                                currentLevel->portals.erase(currentLevel->portals.begin() + i);
+                                if (selectedPortalIndex == static_cast<int>(i)) {
+                                    selectedPortalIndex = -1;
+                                } else if (selectedPortalIndex > static_cast<int>(i)) {
+                                    selectedPortalIndex--;
+                                }
+                                deleted = true;
+                                break;
+                            }
+                        }
+                    }
                     // Check enemies if nothing deleted yet
                     if (!deleted) {
                         for (size_t i = 0; i < enemies.size(); ++i) {
@@ -419,6 +541,8 @@ void Game::processEvents() {
                     isDraggingPlatform = false;
                     isDraggingEnemy = false;
                     isDraggingInteractive = false;
+                    isDraggingCheckpoint = false;
+                    isDraggingPortal = false;
                 }
             }
             
@@ -452,6 +576,18 @@ void Game::processEvents() {
                     editorObjectType = EditorObjectType::Turret;
                     selectedPlatformIndex = -1;
                     selectedEnemyIndex = -1;
+                } else if (event.key.code == sf::Keyboard::Num8) {
+                    editorObjectType = EditorObjectType::Checkpoint;
+                    selectedPlatformIndex = -1;
+                    selectedEnemyIndex = -1;
+                    selectedInteractiveIndex = -1;
+                    selectedPortalIndex = -1;
+                } else if (event.key.code == sf::Keyboard::Num9) {
+                    editorObjectType = EditorObjectType::Portal;
+                    selectedPlatformIndex = -1;
+                    selectedEnemyIndex = -1;
+                    selectedInteractiveIndex = -1;
+                    selectedCheckpointIndex = -1;
                 }
             }
 
@@ -473,6 +609,12 @@ void Game::processEvents() {
                 } else if (selectedInteractiveIndex >= 0 && selectedInteractiveIndex < static_cast<int>(interactiveObjects.size())) {
                     interactiveObjects.erase(interactiveObjects.begin() + selectedInteractiveIndex);
                     selectedInteractiveIndex = -1;
+                } else if (selectedCheckpointIndex >= 0 && selectedCheckpointIndex < static_cast<int>(checkpoints.size())) {
+                    checkpoints.erase(checkpoints.begin() + selectedCheckpointIndex);
+                    selectedCheckpointIndex = -1;
+                } else if (selectedPortalIndex >= 0 && currentLevel && selectedPortalIndex < static_cast<int>(currentLevel->portals.size())) {
+                    currentLevel->portals.erase(currentLevel->portals.begin() + selectedPortalIndex);
+                    selectedPortalIndex = -1;
                 }
             }
             // Reload level from file (F5)
@@ -482,14 +624,48 @@ void Game::processEvents() {
                     selectedPlatformIndex = -1;
                     selectedEnemyIndex = -1;
                     selectedInteractiveIndex = -1;
+                    selectedCheckpointIndex = -1;
+                    selectedPortalIndex = -1;
                     isDraggingPlatform = false;
                     isDraggingEnemy = false;
                     isDraggingInteractive = false;
+                    isDraggingCheckpoint = false;
+                    isDraggingPortal = false;
                 }
             }
-            // Change platform type with T key
+            // Change platform type or portal spawn direction with T key
             if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::T) {
-                if (selectedPlatformIndex >= 0 && selectedPlatformIndex < static_cast<int>(platforms.size())) {
+                // First check if a portal is selected
+                if (selectedPortalIndex >= 0 && currentLevel && selectedPortalIndex < static_cast<int>(currentLevel->portals.size())) {
+                    // Cycle through spawn directions
+                    Portal& portal = currentLevel->portals[selectedPortalIndex];
+                    std::string currentDir = portal.spawnDirection;
+                    // Clean current direction
+                    while (!currentDir.empty() && (currentDir.front() == '"' || currentDir.front() == '\'')) {
+                        currentDir = currentDir.substr(1);
+                    }
+                    while (!currentDir.empty() && (currentDir.back() == '"' || currentDir.back() == '\'')) {
+                        currentDir = currentDir.substr(0, currentDir.length() - 1);
+                    }
+                    // Convert to lowercase for comparison
+                    std::string lowerDir = currentDir;
+                    std::transform(lowerDir.begin(), lowerDir.end(), lowerDir.begin(), ::tolower);
+                    
+                    // Cycle: lefttop -> leftbottom -> righttop -> rightbottom -> lefttop
+                    if (lowerDir == "lefttop") {
+                        portal.spawnDirection = "leftbottom";
+                    } else if (lowerDir == "leftbottom") {
+                        portal.spawnDirection = "righttop";
+                    } else if (lowerDir == "righttop") {
+                        portal.spawnDirection = "rightbottom";
+                    } else if (lowerDir == "rightbottom") {
+                        portal.spawnDirection = "lefttop";
+                    } else {
+                        // Default to lefttop if unknown
+                        portal.spawnDirection = "lefttop";
+                    }
+                    std::cout << "Spawn direction changee: " << portal.spawnDirection << "\n";
+                } else if (selectedPlatformIndex >= 0 && selectedPlatformIndex < static_cast<int>(platforms.size())) {
                     // Cycle through platform types
                     Platform::Type currentType = platforms[selectedPlatformIndex]->getType();
                     Platform::Type nextType;
@@ -764,17 +940,28 @@ void Game::update(float dt) {
     else if (!player->isDead() && playerWasDead) {
         playerWasDead = false;
         
-        // After respawn, check if we need to load the checkpoint level
-        // (if current level has no checkpoint and global checkpoint is from another level)
-        if (!currentLevelPath.empty()) {
-            auto levelCpIt = levelCheckpoints.find(currentLevelPath);
-            bool hasLevelCheckpoint = (levelCpIt != levelCheckpoints.end() && !levelCpIt->second.empty());
-            
-            if (!hasLevelCheckpoint && !lastGlobalCheckpointLevel.empty() && 
-                lastGlobalCheckpointLevel != currentLevelPath && !lastGlobalCheckpointId.empty()) {
-                // Load the checkpoint level and respawn there
+        // Always respawn at the last global checkpoint, regardless of where death occurred
+        if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty()) {
+            // If we're not in the checkpoint level, load it
+            if (currentLevelPath != lastGlobalCheckpointLevel) {
                 loadLevel(lastGlobalCheckpointLevel);
                 return;
+            } else {
+                // We're in the checkpoint level, respawn at the checkpoint position
+                for (auto& checkpoint : checkpoints) {
+                    if (checkpoint && checkpoint->getId() == lastGlobalCheckpointId) {
+                        sf::Vector2f cpPos = checkpoint->getSpawnPosition();
+                        player->setPosition(cpPos.x, cpPos.y);
+                        player->setSpawnPoint(cpPos.x, cpPos.y);
+                        // Update spawn point for all players
+                        for (auto& p : players) {
+                            if (p) {
+                                p->setSpawnPoint(cpPos.x, cpPos.y);
+                            }
+                        }
+                        break;
+                    }
+                }
             }
         }
     }
@@ -790,18 +977,43 @@ void Game::update(float dt) {
             if (!currentLevelPath.empty()) {
                 levelCheckpoints[currentLevelPath] = activeCheckpointId;
             }
-            // Update spawn point for all players
+            // Save as global last checkpoint FIRST
             sf::Vector2f cpPos = checkpoint->getSpawnPosition();
-            for (auto& p : players) {
-                if (p) {
-                    p->setSpawnPoint(cpPos.x, cpPos.y);
-                }
-            }
-            
-            // Save as global last checkpoint
             lastGlobalCheckpointLevel = currentLevelPath;
             lastGlobalCheckpointId = activeCheckpointId;
             lastGlobalCheckpointPos = cpPos;
+            
+            // Update spawn point for all players to use the global checkpoint
+            // This ensures respawn always uses the last checkpoint, regardless of where death occurs
+            for (auto& p : players) {
+                if (p) {
+                    p->setSpawnPoint(lastGlobalCheckpointPos.x, lastGlobalCheckpointPos.y);
+                }
+            }
+            
+            // Auto-save when checkpoint is activated
+            if (currentLevel) {
+                // Convert levelId to level number for save
+                int levelNum = 1; // Default
+                if (currentLevel->levelId == "zone1_level1") levelNum = 1;
+                else if (currentLevel->levelId == "zone1_level2") levelNum = 2;
+                else if (currentLevel->levelId == "zone1_level3") levelNum = 3;
+                else if (currentLevel->levelId == "zone1_boss") levelNum = 4;
+                else if (currentLevel->levelId == "zone1_secret") levelNum = 2; // Use level 2 as base for secret
+                
+                saveData.currentLevel = levelNum;
+                saveData.checkpointX = cpPos.x;
+                saveData.checkpointY = cpPos.y;
+                // Copy checkpoint ID to saveData
+                size_t copyLen = std::min(activeCheckpointId.length(), static_cast<size_t>(sizeof(saveData.activeCheckpointId) - 1));
+                std::memcpy(saveData.activeCheckpointId, activeCheckpointId.c_str(), copyLen);
+                saveData.activeCheckpointId[copyLen] = '\0';
+                
+                // Save to file
+                if (SaveSystem::save(saveData)) {
+                    std::cout << "Game auto-saved at checkpoint: " << activeCheckpointId << "\n";
+                }
+            }
             
             audioManager->playSound("checkpoint", 70.0f);
 
@@ -1160,8 +1372,6 @@ void Game::update(float dt) {
         enemies.end()
     );
 
-    // GoalZone disabled (portals no longer used; edges handle transitions)
-    (void)goalZone;
 
     // Victory effects (only trigger once)
     if (levelCompleted && !victoryEffectsTriggered) {
@@ -1199,7 +1409,6 @@ void Game::render() {
             for (auto& interactive : interactiveObjects) {
                 if (interactive) interactive->draw(window);
             }
-            if (goalZone) goalZone->draw(window);
             for (auto& enemy : enemies) {
                 if (enemy && enemy->isAlive()) {
                     enemy->draw(window);
@@ -1371,20 +1580,28 @@ void Game::loadLevel(const std::string& levelPath) {
     currentLevel = LevelLoader::loadFromFile(levelPath);
     currentLevelPath = levelPath;
 
-        if (currentLevel) {
+    if (currentLevel) {
             // Move data from LevelData to Game
             platforms = std::move(currentLevel->platforms);
             checkpoints = std::move(currentLevel->checkpoints);
             interactiveObjects = std::move(currentLevel->interactiveObjects);
-            goalZone = std::move(currentLevel->goalZone);
 
-            // Load enemies from JSON
-            enemies = std::move(currentLevel->enemies);
-            
+        // Load enemies from JSON
+        enemies = std::move(currentLevel->enemies);
+        
         kineticWaveProjectiles.clear();
         
-        // Determine spawn position: portal spawn takes priority, then checkpoint, then level start
-        sf::Vector2f spawnPos = currentLevel->startPosition;
+        // Determine spawn position: portal spawn takes priority, then checkpoint, then first checkpoint or calculated position
+        sf::Vector2f spawnPos;
+        // Default: use first checkpoint if available, otherwise calculate from camera zone
+        if (!checkpoints.empty() && checkpoints[0]) {
+            spawnPos = checkpoints[0]->getSpawnPosition();
+        } else if (!currentLevel->cameraZones.empty()) {
+            const auto& zone = currentLevel->cameraZones[0];
+            spawnPos = sf::Vector2f(zone.minX + 100.0f, zone.minY + 400.0f);
+        } else {
+            spawnPos = sf::Vector2f(100.0f, 400.0f); // Ultimate fallback
+        }
         bool useCheckpointSpawn = false;
         
         // First priority: portal spawn (when transitioning via portal)
@@ -1392,7 +1609,7 @@ void Game::loadLevel(const std::string& levelPath) {
             spawnPos = pendingPortalCustomSpawnPos;
             useCheckpointSpawn = false; // Custom spawn takes priority
         } else if (pendingPortalSpawnDirection != "default" && !currentLevel->cameraZones.empty()) {
-            const auto& zone = currentLevel->cameraZones[0];
+            const auto& portalZone = currentLevel->cameraZones[0];
             
             // Clean the spawn direction (remove any extra quotes or whitespace)
             std::string cleanDirection = pendingPortalSpawnDirection;
@@ -1408,7 +1625,7 @@ void Game::loadLevel(const std::string& levelPath) {
             std::transform(lowerDirection.begin(), lowerDirection.end(), lowerDirection.begin(), ::tolower);
             
             if (lowerDirection == "lefttop" || lowerDirection == "leftbottom") {
-                spawnPos.x = zone.minX + 40.0f; // Spawn closer to the left edge
+                spawnPos.x = portalZone.minX + 40.0f; // Spawn closer to the left edge
                 // Find a platform at this X position to set Y correctly
                 float bestY = (lowerDirection == "lefttop") ? 10000.0f : -10000.0f; // Top: find highest, Bottom: find lowest
                 bool foundPlatform = false;
@@ -1439,27 +1656,33 @@ void Game::loadLevel(const std::string& levelPath) {
                 }
                 spawnPos.y = bestY;
             } else if (lowerDirection == "righttop" || lowerDirection == "rightbottom") {
-                spawnPos.x = zone.maxX - 30.0f; // Spawn closer to the right edge
-                // Clamp X to be within map bounds
-                if (spawnPos.x < zone.minX) spawnPos.x = zone.minX + 20.0f;
-                if (spawnPos.x > zone.maxX) spawnPos.x = zone.maxX - 30.0f;
-                // Find a platform at this X position - search more broadly
+                // First, find the rightmost platform to determine spawn X
+                float rightmostPlatformRight = portalZone.minX; // Start with left edge as fallback
                 float bestY = (lowerDirection == "righttop") ? 10000.0f : -10000.0f; // Top: find highest, Bottom: find lowest
                 bool foundPlatform = false;
+                
+                // Find the rightmost platform and determine best Y
                 for (const auto& platform : platforms) {
                     if (platform) {
                         sf::FloatRect platBounds = platform->getBounds();
-                        // Check if platform is near our spawn X (wider search range)
-                        if (spawnPos.x >= platBounds.left - 100.0f && spawnPos.x <= platBounds.left + platBounds.width + 100.0f) {
+                        float platformRight = platBounds.left + platBounds.width;
+                        
+                        // Track the rightmost platform
+                        if (platformRight > rightmostPlatformRight) {
+                            rightmostPlatformRight = platformRight;
+                        }
+                        
+                        // Check if this platform is near the right edge (within 200 pixels of maxX)
+                        if (platformRight >= portalZone.maxX - 200.0f) {
                             float platformTop = platBounds.top;
                             if (lowerDirection == "righttop") {
-                                // Find the HIGHEST platform (lowest Y value)
+                                // Find the HIGHEST platform (lowest Y value) near the right edge
                                 if (platformTop < bestY || !foundPlatform) {
                                     bestY = platformTop - 60.0f;
                                     foundPlatform = true;
                                 }
                             } else { // rightbottom
-                                // Find the LOWEST platform (highest Y value, closest to ground)
+                                // Find the LOWEST platform (highest Y value, closest to ground) near the right edge
                                 if (platformTop > bestY) {
                                     bestY = platformTop - 60.0f;
                                     foundPlatform = true;
@@ -1468,57 +1691,122 @@ void Game::loadLevel(const std::string& levelPath) {
                         }
                     }
                 }
+                
+                // Set spawn X to be near the right edge of the rightmost platform
+                spawnPos.x = rightmostPlatformRight - 30.0f;
+                
+                // Check if there's a portal at this position and adjust to avoid spawning inside it
+                if (currentLevel) {
+                    for (const auto& portal : currentLevel->portals) {
+                        sf::FloatRect portalBounds(portal.x, portal.y, portal.width, portal.height);
+                        // If spawn position would be inside or very close to a portal, move left
+                        if (spawnPos.x >= portalBounds.left - 10.0f && spawnPos.x <= portalBounds.left + portalBounds.width + 10.0f) {
+                            // Move spawn to the left of the portal with some margin
+                            spawnPos.x = portalBounds.left - 50.0f;
+                            // Make sure we're still on a platform
+                            if (spawnPos.x < portalZone.minX + 20.0f) {
+                                spawnPos.x = portalZone.minX + 20.0f;
+                            }
+                            break;
+                        }
+                    }
+                }
+                
+                // Only clamp X if it's way outside reasonable bounds
+                // But ensure we're at least 20 pixels from the left edge
+                if (spawnPos.x < portalZone.minX + 20.0f) {
+                    spawnPos.x = portalZone.minX + 20.0f;
+                }
+                // Don't clamp to maxX - allow spawning on platforms that extend beyond camera zone
+                
+                // If we found a platform near the right edge, use its Y
+                // Otherwise, find any platform at the calculated X position
                 if (!foundPlatform) {
-                    // Fallback: use level start Y or find any platform near the right edge
-                    bestY = spawnPos.y; // Default to level start Y
+                    // Fallback: find any platform at the calculated spawn X
                     for (const auto& platform : platforms) {
                         if (platform) {
                             sf::FloatRect platBounds = platform->getBounds();
-                            // Find any platform near the right edge
-                            if (platBounds.left + platBounds.width >= zone.maxX - 150.0f) {
+                            float platformRight = platBounds.left + platBounds.width;
+                            // Check if platform is near our spawn X (including if spawn is on the platform)
+                            if (spawnPos.x >= platBounds.left - 50.0f && spawnPos.x <= platformRight + 50.0f) {
                                 float platformTop = platBounds.top;
                                 if (lowerDirection == "righttop") {
                                     if (platformTop < bestY || !foundPlatform) {
                                         bestY = platformTop - 60.0f;
                                         foundPlatform = true;
-                                        spawnPos.x = platBounds.left + platBounds.width - 30.0f;
+                                        // Adjust spawn X to be on the platform if needed
+                                        if (spawnPos.x > platformRight) {
+                                            spawnPos.x = platformRight - 30.0f;
+                                        }
                                     }
                                 } else { // rightbottom
                                     if (platformTop > bestY) {
                                         bestY = platformTop - 60.0f;
                                         foundPlatform = true;
-                                        spawnPos.x = platBounds.left + platBounds.width - 30.0f;
+                                        // Adjust spawn X to be on the platform if needed
+                                        if (spawnPos.x > platformRight) {
+                                            spawnPos.x = platformRight - 30.0f;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
+                
+                if (!foundPlatform) {
+                    // Ultimate fallback: use calculated Y from camera zone
+                    bestY = spawnPos.y;
+                }
+                
                 spawnPos.y = bestY;
             }
             useCheckpointSpawn = false; // Portal spawn takes priority
         } else {
             // No portal spawn, check for checkpoint
-            auto it = levelCheckpoints.find(currentLevelPath);
-            if (it != levelCheckpoints.end() && !it->second.empty()) {
-                // This level has an activated checkpoint, use it
-                activeCheckpointId = it->second;
+            // Priority: last global checkpoint > level checkpoint > first checkpoint > calculated
+            bool foundCheckpoint = false;
+            
+            // First, try to use the last global checkpoint if we're in that level
+            if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty() && 
+                lastGlobalCheckpointLevel == currentLevelPath) {
                 for (auto& checkpoint : checkpoints) {
-                    if (checkpoint->getId() == activeCheckpointId) {
+                    if (checkpoint && checkpoint->getId() == lastGlobalCheckpointId) {
                         checkpoint->activate();
                         spawnPos = checkpoint->getSpawnPosition();
+                        activeCheckpointId = lastGlobalCheckpointId;
                         useCheckpointSpawn = true;
+                        foundCheckpoint = true;
                         break;
                     }
                 }
-            } else if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty() && lastGlobalCheckpointLevel != currentLevelPath) {
-                // No checkpoint activated in this level, and global checkpoint is from a different level
-                // Don't use global checkpoint position here (it's in another level)
-                // Just spawn at level start, and respawn will handle loading the checkpoint level
-                spawnPos = currentLevel->startPosition;
-                activeCheckpointId.clear();
-            } else {
-                // No checkpoint at all, use level start
+            }
+            
+            // If global checkpoint not found, try level checkpoint
+            if (!foundCheckpoint) {
+                auto it = levelCheckpoints.find(currentLevelPath);
+                if (it != levelCheckpoints.end() && !it->second.empty()) {
+                    activeCheckpointId = it->second;
+                    for (auto& checkpoint : checkpoints) {
+                        if (checkpoint && checkpoint->getId() == activeCheckpointId) {
+                            checkpoint->activate();
+                            spawnPos = checkpoint->getSpawnPosition();
+                            useCheckpointSpawn = true;
+                            foundCheckpoint = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // If still no checkpoint, use first checkpoint or calculated position
+            if (!foundCheckpoint) {
+                if (!checkpoints.empty() && checkpoints[0]) {
+                    spawnPos = checkpoints[0]->getSpawnPosition();
+                } else if (!currentLevel->cameraZones.empty()) {
+                    const auto& zone = currentLevel->cameraZones[0];
+                    spawnPos = sf::Vector2f(zone.minX + 100.0f, zone.minY + 400.0f);
+                }
                 activeCheckpointId.clear();
             }
         }
@@ -1528,9 +1816,15 @@ void Game::loadLevel(const std::string& levelPath) {
             for (auto& p : players) {
                 if (p) {
                     p->setPosition(spawnPos.x, spawnPos.y);
-                    // Set spawn point: use level checkpoint if available, otherwise level start
-                    // (Global checkpoint will be handled during respawn by loading the checkpoint level)
-                    p->setSpawnPoint(spawnPos.x, spawnPos.y);
+                    // Always set spawn point to the last global checkpoint position
+                    // This ensures respawn always uses the last checkpoint, regardless of level
+                    if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty()) {
+                        // Use global checkpoint position if available
+                        p->setSpawnPoint(lastGlobalCheckpointPos.x, lastGlobalCheckpointPos.y);
+                    } else {
+                        // Fallback to current spawn position
+                        p->setSpawnPoint(spawnPos.x, spawnPos.y);
+                    }
                     p->setVelocity(sf::Vector2f(0.0f, 0.0f));
                 }
             }
@@ -1611,8 +1905,16 @@ void Game::startNewGame() {
     // Load level first
     loadLevel();
 
-    // Create all 3 characters at level start position
-    sf::Vector2f startPos = currentLevel ? currentLevel->startPosition : sf::Vector2f(100.0f, 100.0f);
+    // Create all 3 characters at spawn position (first checkpoint or calculated)
+    sf::Vector2f startPos = sf::Vector2f(100.0f, 400.0f);
+    if (currentLevel) {
+        if (!checkpoints.empty() && checkpoints[0]) {
+            startPos = checkpoints[0]->getSpawnPosition();
+        } else if (!currentLevel->cameraZones.empty()) {
+            const auto& zone = currentLevel->cameraZones[0];
+            startPos = sf::Vector2f(zone.minX + 100.0f, zone.minY + 400.0f);
+        }
+    }
 
     // Create Lyra (Green) - Starting character
     auto lyra = std::make_unique<Player>(startPos.x, startPos.y, CharacterType::Lyra);
@@ -1661,71 +1963,133 @@ void Game::continueGame() {
         currentLevelPath.clear();
         currentLevelNumber = saveData.currentLevel;
 
-        // Convert old save format (level number) to new format (level ID)
-        // If currentLevelNumber <= 3, it's Zone 1
+        // Determine which level to load based on saved checkpoint
         std::string levelPath;
-        if (currentLevelNumber == 1) {
-            levelPath = "assets/levels/zone1_level1.json";
-        } else if (currentLevelNumber == 2) {
-            levelPath = "assets/levels/zone1_level2.json";
-        } else if (currentLevelNumber == 3) {
-            levelPath = "assets/levels/zone1_level3.json";
-        } else if (currentLevelNumber == 4) {
-            levelPath = "assets/levels/zone1_boss.json";
-        } else {
-            // Level number > 4: try legacy format (for future zones not yet converted)
-            levelPath = "assets/levels/level" + std::to_string(currentLevelNumber) + ".json";
+        bool foundCheckpointLevel = false;
+        
+        // If we have a saved checkpoint, search for it in all possible levels
+        if (saveData.activeCheckpointId[0] != '\0') {
+            activeCheckpointId = std::string(saveData.activeCheckpointId);
+            
+            // List of all possible levels to search
+            std::vector<std::string> possibleLevels = {
+                "assets/levels/zone1_level1.json",
+                "assets/levels/zone1_level2.json",
+                "assets/levels/zone1_level3.json",
+                "assets/levels/zone1_boss.json",
+                "assets/levels/zone1_secret.json"
+            };
+            
+            // Search for the checkpoint in all levels
+            for (const auto& testLevelPath : possibleLevels) {
+                auto testLevel = LevelLoader::loadFromFile(testLevelPath);
+                if (testLevel) {
+                    for (const auto& cp : testLevel->checkpoints) {
+                        if (cp && cp->getId() == activeCheckpointId) {
+                            // Found the checkpoint! Use this level
+                            levelPath = testLevelPath;
+                            foundCheckpointLevel = true;
+                            currentLevel = std::move(testLevel);
+                            break;
+                        }
+                    }
+                    if (foundCheckpointLevel) break;
+                }
+            }
         }
         
-        currentLevel = LevelLoader::loadFromFile(levelPath);
+        // If checkpoint not found, use saved level number as fallback
+        if (!foundCheckpointLevel) {
+            // Convert old save format (level number) to new format (level ID)
+            if (currentLevelNumber == 1) {
+                levelPath = "assets/levels/zone1_level1.json";
+            } else if (currentLevelNumber == 2) {
+                levelPath = "assets/levels/zone1_level2.json";
+            } else if (currentLevelNumber == 3) {
+                levelPath = "assets/levels/zone1_level3.json";
+            } else if (currentLevelNumber == 4) {
+                levelPath = "assets/levels/zone1_boss.json";
+            } else {
+                // Level number > 4: try legacy format (for future zones not yet converted)
+                levelPath = "assets/levels/level" + std::to_string(currentLevelNumber) + ".json";
+            }
+            
+            currentLevel = LevelLoader::loadFromFile(levelPath);
+        }
         
         // If loading failed, create default level
         if (!currentLevel || currentLevel->platforms.empty()) {
-            std::cout << "Error: Could not load level " << currentLevelNumber << ". Creating default level.\n";
+            std::cout << "Error: Could not load level. Creating default level.\n";
             currentLevel = LevelLoader::createDefaultLevel();
+            levelPath = "assets/levels/zone1_level1.json"; // Default fallback
         }
 
         if (currentLevel) {
             platforms = std::move(currentLevel->platforms);
             checkpoints = std::move(currentLevel->checkpoints);
             interactiveObjects = std::move(currentLevel->interactiveObjects);
-            goalZone = std::move(currentLevel->goalZone);
+            currentLevelPath = levelPath;
 
-            // Determine spawn position: checkpoint if available, otherwise level start
-            sf::Vector2f spawnPos = currentLevel->startPosition;
+            // Determine spawn position: use saved checkpoint if available, otherwise first checkpoint or calculated
+            sf::Vector2f spawnPos;
+            bool useSavedCheckpoint = false;
+            
+            // Priority 1: Use saved checkpoint from save file
             if (saveData.activeCheckpointId[0] != '\0') {
-                // Use saved checkpoint position
-                spawnPos.x = saveData.checkpointX;
-                spawnPos.y = saveData.checkpointY;
-                activeCheckpointId = std::string(saveData.activeCheckpointId);
-
-                // Activate the corresponding checkpoint in the level
+                // Find and activate the checkpoint in the loaded level
                 for (auto& checkpoint : checkpoints) {
-                    if (checkpoint->getId() == activeCheckpointId) {
+                    if (checkpoint && checkpoint->getId() == activeCheckpointId) {
                         checkpoint->activate();
-                        // Update spawn point for all players
-                        sf::Vector2f cpPos = checkpoint->getSpawnPosition();
-                        for (auto& p : players) {
-                            if (p) {
-                                p->setSpawnPoint(cpPos.x, cpPos.y);
-                            }
-                        }
+                        spawnPos = checkpoint->getSpawnPosition();
+                        useSavedCheckpoint = true;
+                        
+                        // Update global checkpoint info
+                        lastGlobalCheckpointLevel = levelPath;
+                        lastGlobalCheckpointId = activeCheckpointId;
+                        lastGlobalCheckpointPos = spawnPos;
+                        levelCheckpoints[levelPath] = activeCheckpointId;
+                        
                         break;
                     }
                 }
-
+            }
+            
+            // Fallback: use first checkpoint or calculated position
+            if (!useSavedCheckpoint) {
+                if (!checkpoints.empty() && checkpoints[0]) {
+                    spawnPos = checkpoints[0]->getSpawnPosition();
+                } else if (currentLevel && !currentLevel->cameraZones.empty()) {
+                    const auto& zone = currentLevel->cameraZones[0];
+                    spawnPos = sf::Vector2f(zone.minX + 100.0f, zone.minY + 400.0f);
+                } else {
+                    spawnPos = sf::Vector2f(100.0f, 400.0f);
+                }
+            }
 
             // Create all 3 characters at spawn position
             auto lyra = std::make_unique<Player>(spawnPos.x, spawnPos.y, CharacterType::Lyra);
-            lyra->setSpawnPoint(spawnPos.x, spawnPos.y);
+            // Set spawn point to global checkpoint if available
+            if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty()) {
+                lyra->setSpawnPoint(lastGlobalCheckpointPos.x, lastGlobalCheckpointPos.y);
+            } else {
+                lyra->setSpawnPoint(spawnPos.x, spawnPos.y);
+            }
             players.push_back(std::move(lyra));
 
             auto noah = std::make_unique<Player>(spawnPos.x, spawnPos.y, CharacterType::Noah);
-            noah->setSpawnPoint(spawnPos.x, spawnPos.y);
+            if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty()) {
+                noah->setSpawnPoint(lastGlobalCheckpointPos.x, lastGlobalCheckpointPos.y);
+            } else {
+                noah->setSpawnPoint(spawnPos.x, spawnPos.y);
+            }
             players.push_back(std::move(noah));
 
             auto sera = std::make_unique<Player>(spawnPos.x, spawnPos.y, CharacterType::Sera);
-            sera->setSpawnPoint(spawnPos.x, spawnPos.y);
+            if (!lastGlobalCheckpointLevel.empty() && !lastGlobalCheckpointId.empty()) {
+                sera->setSpawnPoint(lastGlobalCheckpointPos.x, lastGlobalCheckpointPos.y);
+            } else {
+                sera->setSpawnPoint(spawnPos.x, spawnPos.y);
+            }
             players.push_back(std::move(sera));
 
             activePlayerIndex = 0;
@@ -1806,7 +2170,6 @@ void Game::returnToTitleScreen() {
     platforms.clear();
     checkpoints.clear();
     interactiveObjects.clear();
-    goalZone.reset();
     camera.reset();
     gameUI.reset();
 
@@ -1891,6 +2254,23 @@ void Game::updateEditor(float dt) {
         
         InteractiveObject* obj = interactiveObjects[selectedInteractiveIndex].get();
         obj->setPosition(worldPos.x - dragOffset.x, worldPos.y - dragOffset.y);
+    }
+    
+    if (isDraggingCheckpoint && selectedCheckpointIndex >= 0 && selectedCheckpointIndex < static_cast<int>(checkpoints.size())) {
+        sf::Vector2i mousePixelPos = sf::Mouse::getPosition(window);
+        sf::Vector2f worldPos = screenToWorld(sf::Vector2f(static_cast<float>(mousePixelPos.x), static_cast<float>(mousePixelPos.y)));
+        
+        Checkpoint* cp = checkpoints[selectedCheckpointIndex].get();
+        cp->setPosition(worldPos.x - dragOffset.x, worldPos.y - dragOffset.y);
+    }
+    
+    if (isDraggingPortal && selectedPortalIndex >= 0 && currentLevel && selectedPortalIndex < static_cast<int>(currentLevel->portals.size())) {
+        sf::Vector2i mousePixelPos = sf::Mouse::getPosition(window);
+        sf::Vector2f worldPos = screenToWorld(sf::Vector2f(static_cast<float>(mousePixelPos.x), static_cast<float>(mousePixelPos.y)));
+        
+        Portal& portal = currentLevel->portals[selectedPortalIndex];
+        portal.x = worldPos.x - dragOffset.x;
+        portal.y = worldPos.y - dragOffset.y;
     }
 
     // Camera movement with arrow keys (move player to move camera)
@@ -2083,14 +2463,71 @@ void Game::renderEditor() {
     }
 
     // Draw checkpoints
-    for (auto& checkpoint : checkpoints) {
-        checkpoint->draw(window);
+    for (size_t i = 0; i < checkpoints.size(); ++i) {
+        checkpoints[i]->draw(window);
+        
+        // Highlight selected checkpoint
+        if (static_cast<int>(i) == selectedCheckpointIndex) {
+            sf::FloatRect bounds = checkpoints[i]->getBounds();
+            sf::RectangleShape outline;
+            outline.setSize(sf::Vector2f(bounds.width, bounds.height));
+            outline.setPosition(bounds.left, bounds.top);
+            outline.setFillColor(sf::Color::Transparent);
+            outline.setOutlineColor(sf::Color::Green);
+            outline.setOutlineThickness(2.0f);
+            window.draw(outline);
+        }
+        
+        // Draw checkpoint index and ID
+        if (editorFont.getInfo().family != "") {
+            sf::Text indexText;
+            indexText.setFont(editorFont);
+            indexText.setString("CP" + std::to_string(i) + "\n" + checkpoints[i]->getId());
+            indexText.setCharacterSize(12);
+            indexText.setFillColor(sf::Color::Green);
+            sf::FloatRect bounds = checkpoints[i]->getBounds();
+            indexText.setPosition(bounds.left + bounds.width / 2.0f - 30.0f, bounds.top - 30.0f);
+            window.draw(indexText);
+        }
+    }
+    
+    // Draw portals
+    if (currentLevel) {
+        for (size_t i = 0; i < currentLevel->portals.size(); ++i) {
+            const auto& portal = currentLevel->portals[i];
+            sf::RectangleShape portalRect;
+            portalRect.setSize(sf::Vector2f(portal.width, portal.height));
+            portalRect.setPosition(portal.x, portal.y);
+            portalRect.setFillColor(sf::Color(255, 0, 255, 100)); // Magenta, semi-transparent
+            portalRect.setOutlineColor(sf::Color::Magenta);
+            portalRect.setOutlineThickness(2.0f);
+            window.draw(portalRect);
+            
+            // Highlight selected portal
+            if (static_cast<int>(i) == selectedPortalIndex) {
+                sf::RectangleShape outline;
+                outline.setSize(sf::Vector2f(portal.width + 4.0f, portal.height + 4.0f));
+                outline.setPosition(portal.x - 2.0f, portal.y - 2.0f);
+                outline.setFillColor(sf::Color::Transparent);
+                outline.setOutlineColor(sf::Color::Yellow);
+                outline.setOutlineThickness(3.0f);
+                window.draw(outline);
+            }
+            
+            // Draw portal index and info
+            if (editorFont.getInfo().family != "") {
+                sf::Text indexText;
+                indexText.setFont(editorFont);
+                std::string info = "Portal" + std::to_string(i) + "\n" + portal.targetLevel + "\n" + portal.spawnDirection;
+                indexText.setString(info);
+                indexText.setCharacterSize(10);
+                indexText.setFillColor(sf::Color::Magenta);
+                indexText.setPosition(portal.x + portal.width / 2.0f - 40.0f, portal.y - 45.0f);
+                window.draw(indexText);
+            }
+        }
     }
 
-    // Draw goal zone
-    if (goalZone) {
-        goalZone->draw(window);
-    }
 
     window.setView(window.getDefaultView());
 
@@ -2098,7 +2535,7 @@ void Game::renderEditor() {
     if (editorFont.getInfo().family != "") {
         editorText.setFont(editorFont);
         editorText.setCharacterSize(16);
-        editorText.setFillColor(sf::Color::Black);
+        editorText.setFillColor(sf::Color::Red);
         editorText.setPosition(10.0f, 10.0f);
         
         std::string objectTypeStr = "Platform";
@@ -2110,13 +2547,15 @@ void Game::renderEditor() {
             case EditorObjectType::Terminal: objectTypeStr = "Terminal"; break;
             case EditorObjectType::Door: objectTypeStr = "Door"; break;
             case EditorObjectType::Turret: objectTypeStr = "Turret"; break;
+            case EditorObjectType::Checkpoint: objectTypeStr = "Checkpoint"; break;
+            case EditorObjectType::Portal: objectTypeStr = "Portal"; break;
         }
         
         std::string info = "MODE EDITEUR\n";
         info += "F1: Toggle Editor\n";
-        info += "1-7: Type objet (" + objectTypeStr + ")\n";
+        info += "1-9: Type objet (" + objectTypeStr + ")\n";
         info += "  1=Platform 2=Patrol 3=Flying 4=Spike\n";
-        info += "  5=Terminal 6=Door 7=Turret\n";
+        info += "  5=Terminal 6=Door 7=Turret 8=Checkpoint 9=Portal\n";
         info += "Clic Gauche: Placer/Selectionner\n";
         info += "Clic Droit: Supprimer\n";
         info += "Delete: Supprimer selectionnee\n";
@@ -2125,7 +2564,7 @@ void Game::renderEditor() {
         info += "Fleches: Deplacer camera\n";
         info += "+/-: Largeur plateforme\n";
         info += "PageUp/Down: Hauteur plateforme\n";
-        info += "T: Changer type plateforme\n";
+        info += "T: Changer type plateforme / direction spawn portail\n";
         if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(enemies.size())) {
             Enemy* enemy = enemies[selectedEnemyIndex].get();
             if (enemy->getType() == EnemyType::Patrol || enemy->getType() == EnemyType::Flying) {
@@ -2324,10 +2763,55 @@ void Game::saveLevelToFile() {
         std::cout << "Objet interactif " << i << " sauvegarde: type=" << typeStr << ", x=" << pos.x << ", y=" << pos.y << ", id=" << obj->getId() << "\n";
     }
     
-    // Preserve portals array - don't modify them, just keep them as they are
-    // Portals are read-only in editor - they should be edited manually in JSON
-    // If portals don't exist in the JSON, we don't add them (keep them absent)
-    // If they exist, they will be preserved automatically since we don't touch j["portals"]
+    // Update checkpoints array
+    j["checkpoints"] = nlohmann::json::array();
+    for (size_t i = 0; i < checkpoints.size(); ++i) {
+        const auto& checkpoint = checkpoints[i];
+        sf::Vector2f pos = checkpoint->getPosition();
+        nlohmann::json cp;
+        cp["x"] = pos.x;
+        cp["y"] = pos.y;
+        cp["id"] = checkpoint->getId();
+        j["checkpoints"].push_back(cp);
+    }
+    
+    // Update portals array
+    if (currentLevel) {
+        j["portals"] = nlohmann::json::array();
+        for (const auto& portal : currentLevel->portals) {
+            // Clean targetLevel and spawnDirection to remove any extra quotes
+            std::string cleanTargetLevel = portal.targetLevel;
+            while (!cleanTargetLevel.empty() && (cleanTargetLevel.front() == '"' || cleanTargetLevel.front() == '\'')) {
+                cleanTargetLevel = cleanTargetLevel.substr(1);
+            }
+            while (!cleanTargetLevel.empty() && (cleanTargetLevel.back() == '"' || cleanTargetLevel.back() == '\'')) {
+                cleanTargetLevel = cleanTargetLevel.substr(0, cleanTargetLevel.length() - 1);
+            }
+            
+            std::string cleanSpawnDirection = portal.spawnDirection;
+            while (!cleanSpawnDirection.empty() && (cleanSpawnDirection.front() == '"' || cleanSpawnDirection.front() == '\'')) {
+                cleanSpawnDirection = cleanSpawnDirection.substr(1);
+            }
+            while (!cleanSpawnDirection.empty() && (cleanSpawnDirection.back() == '"' || cleanSpawnDirection.back() == '\'')) {
+                cleanSpawnDirection = cleanSpawnDirection.substr(0, cleanSpawnDirection.length() - 1);
+            }
+            
+            nlohmann::json p;
+            p["x"] = portal.x;
+            p["y"] = portal.y;
+            p["width"] = portal.width;
+            p["height"] = portal.height;
+            p["targetLevel"] = cleanTargetLevel;
+            p["spawnDirection"] = cleanSpawnDirection;
+            if (portal.useCustomSpawn) {
+                p["useCustomSpawn"] = true;
+                p["customSpawnPos"] = nlohmann::json::array({portal.customSpawnPos.x, portal.customSpawnPos.y});
+            } else {
+                p["useCustomSpawn"] = false;
+            }
+            j["portals"].push_back(p);
+        }
+    }
 
     // Save back to file
     std::ofstream outFile(savePath);
@@ -2595,8 +3079,189 @@ fallback_save:
         }
     }
     
-    // Preserve portals array (don't modify it, just ensure it exists if it was there)
-    // Portals are read-only in editor - they should be edited manually in JSON
+    // Update checkpoints array
+    size_t checkpointsStart = content.find("\"checkpoints\"");
+    if (checkpointsStart != std::string::npos) {
+        size_t checkpointsArrayStart = content.find("[", checkpointsStart);
+        if (checkpointsArrayStart != std::string::npos) {
+            size_t checkpointsArrayEnd = checkpointsArrayStart + 1;
+            int checkpointsBracketDepth = 1;
+            while (checkpointsArrayEnd < content.length() && checkpointsBracketDepth > 0) {
+                if (content[checkpointsArrayEnd] == '[') checkpointsBracketDepth++;
+                else if (content[checkpointsArrayEnd] == ']') checkpointsBracketDepth--;
+                if (checkpointsBracketDepth > 0) checkpointsArrayEnd++;
+                else break;
+            }
+            
+            std::string newCheckpoints = "[\n";
+            for (size_t i = 0; i < checkpoints.size(); ++i) {
+                sf::Vector2f pos = checkpoints[i]->getPosition();
+                std::string id = checkpoints[i]->getId();
+                // Clean ID
+                while (!id.empty() && (id.front() == '"' || id.front() == '\'')) {
+                    id = id.substr(1);
+                }
+                while (!id.empty() && (id.back() == '"' || id.back() == '\'')) {
+                    id = id.substr(0, id.length() - 1);
+                }
+                
+                newCheckpoints += "    { \"x\": " + std::to_string(static_cast<int>(pos.x)) + 
+                                ", \"y\": " + std::to_string(static_cast<int>(pos.y)) +
+                                ", \"id\": \"" + id + "\" }";
+                if (i < checkpoints.size() - 1) {
+                    newCheckpoints += ",";
+                }
+                newCheckpoints += "\n";
+            }
+            newCheckpoints += "  ]";
+            
+            size_t replaceLength = checkpointsArrayEnd - checkpointsArrayStart + 1;
+            if (checkpointsArrayStart + replaceLength > content.length()) {
+                replaceLength = content.length() - checkpointsArrayStart;
+            }
+            content.replace(checkpointsArrayStart, replaceLength, newCheckpoints);
+        }
+    } else {
+        // Insert checkpoints array after interactiveObjects
+        size_t insertPos = content.find_last_of("]");
+        if (insertPos != std::string::npos) {
+            std::string newCheckpoints = ",\n  \"checkpoints\": [\n";
+            for (size_t i = 0; i < checkpoints.size(); ++i) {
+                sf::Vector2f pos = checkpoints[i]->getPosition();
+                std::string id = checkpoints[i]->getId();
+                // Clean ID
+                while (!id.empty() && (id.front() == '"' || id.front() == '\'')) {
+                    id = id.substr(1);
+                }
+                while (!id.empty() && (id.back() == '"' || id.back() == '\'')) {
+                    id = id.substr(0, id.length() - 1);
+                }
+                
+                newCheckpoints += "    { \"x\": " + std::to_string(static_cast<int>(pos.x)) + 
+                                ", \"y\": " + std::to_string(static_cast<int>(pos.y)) +
+                                ", \"id\": \"" + id + "\" }";
+                if (i < checkpoints.size() - 1) {
+                    newCheckpoints += ",";
+                }
+                newCheckpoints += "\n";
+            }
+            newCheckpoints += "  ]";
+            content.insert(insertPos + 1, newCheckpoints);
+        }
+    }
+    
+    // Update portals array
+    if (currentLevel) {
+        size_t portalsStart = content.find("\"portals\"");
+        if (portalsStart != std::string::npos) {
+            size_t portalsArrayStart = content.find("[", portalsStart);
+            if (portalsArrayStart != std::string::npos) {
+                size_t portalsArrayEnd = portalsArrayStart + 1;
+                int portalsBracketDepth = 1;
+                while (portalsArrayEnd < content.length() && portalsBracketDepth > 0) {
+                    if (content[portalsArrayEnd] == '[') portalsBracketDepth++;
+                    else if (content[portalsArrayEnd] == ']') portalsBracketDepth--;
+                    if (portalsBracketDepth > 0) portalsArrayEnd++;
+                    else break;
+                }
+                
+                std::string newPortals = "[\n";
+                for (size_t i = 0; i < currentLevel->portals.size(); ++i) {
+                    const auto& portal = currentLevel->portals[i];
+                    // Clean targetLevel and spawnDirection to remove any extra quotes
+                    std::string cleanTargetLevel = portal.targetLevel;
+                    while (!cleanTargetLevel.empty() && (cleanTargetLevel.front() == '"' || cleanTargetLevel.front() == '\'')) {
+                        cleanTargetLevel = cleanTargetLevel.substr(1);
+                    }
+                    while (!cleanTargetLevel.empty() && (cleanTargetLevel.back() == '"' || cleanTargetLevel.back() == '\'')) {
+                        cleanTargetLevel = cleanTargetLevel.substr(0, cleanTargetLevel.length() - 1);
+                    }
+                    
+                    std::string cleanSpawnDirection = portal.spawnDirection;
+                    while (!cleanSpawnDirection.empty() && (cleanSpawnDirection.front() == '"' || cleanSpawnDirection.front() == '\'')) {
+                        cleanSpawnDirection = cleanSpawnDirection.substr(1);
+                    }
+                    while (!cleanSpawnDirection.empty() && (cleanSpawnDirection.back() == '"' || cleanSpawnDirection.back() == '\'')) {
+                        cleanSpawnDirection = cleanSpawnDirection.substr(0, cleanSpawnDirection.length() - 1);
+                    }
+                    
+                    newPortals += "    {\n";
+                    newPortals += "      \"x\": " + std::to_string(static_cast<int>(portal.x)) + ",\n";
+                    newPortals += "      \"y\": " + std::to_string(static_cast<int>(portal.y)) + ",\n";
+                    newPortals += "      \"width\": " + std::to_string(static_cast<int>(portal.width)) + ",\n";
+                    newPortals += "      \"height\": " + std::to_string(static_cast<int>(portal.height)) + ",\n";
+                    newPortals += "      \"targetLevel\": \"" + cleanTargetLevel + "\",\n";
+                    newPortals += "      \"spawnDirection\": \"" + cleanSpawnDirection + "\"";
+                    if (portal.useCustomSpawn) {
+                        newPortals += ",\n      \"useCustomSpawn\": true,\n";
+                        newPortals += "      \"customSpawnPos\": [" + std::to_string(static_cast<int>(portal.customSpawnPos.x)) + 
+                                     ", " + std::to_string(static_cast<int>(portal.customSpawnPos.y)) + "]";
+                    } else {
+                        newPortals += ",\n      \"useCustomSpawn\": false";
+                    }
+                    newPortals += "\n    }";
+                    if (i < currentLevel->portals.size() - 1) {
+                        newPortals += ",";
+                    }
+                    newPortals += "\n";
+                }
+                newPortals += "  ]";
+                
+                size_t replaceLength = portalsArrayEnd - portalsArrayStart + 1;
+                if (portalsArrayStart + replaceLength > content.length()) {
+                    replaceLength = content.length() - portalsArrayStart;
+                }
+                content.replace(portalsArrayStart, replaceLength, newPortals);
+            }
+        } else {
+            // Insert portals array after checkpoints
+            size_t insertPos = content.find_last_of("]");
+            if (insertPos != std::string::npos && !currentLevel->portals.empty()) {
+                std::string newPortals = ",\n  \"portals\": [\n";
+                for (size_t i = 0; i < currentLevel->portals.size(); ++i) {
+                    const auto& portal = currentLevel->portals[i];
+                    // Clean targetLevel and spawnDirection to remove any extra quotes
+                    std::string cleanTargetLevel = portal.targetLevel;
+                    while (!cleanTargetLevel.empty() && (cleanTargetLevel.front() == '"' || cleanTargetLevel.front() == '\'')) {
+                        cleanTargetLevel = cleanTargetLevel.substr(1);
+                    }
+                    while (!cleanTargetLevel.empty() && (cleanTargetLevel.back() == '"' || cleanTargetLevel.back() == '\'')) {
+                        cleanTargetLevel = cleanTargetLevel.substr(0, cleanTargetLevel.length() - 1);
+                    }
+                    
+                    std::string cleanSpawnDirection = portal.spawnDirection;
+                    while (!cleanSpawnDirection.empty() && (cleanSpawnDirection.front() == '"' || cleanSpawnDirection.front() == '\'')) {
+                        cleanSpawnDirection = cleanSpawnDirection.substr(1);
+                    }
+                    while (!cleanSpawnDirection.empty() && (cleanSpawnDirection.back() == '"' || cleanSpawnDirection.back() == '\'')) {
+                        cleanSpawnDirection = cleanSpawnDirection.substr(0, cleanSpawnDirection.length() - 1);
+                    }
+                    
+                    newPortals += "    {\n";
+                    newPortals += "      \"x\": " + std::to_string(static_cast<int>(portal.x)) + ",\n";
+                    newPortals += "      \"y\": " + std::to_string(static_cast<int>(portal.y)) + ",\n";
+                    newPortals += "      \"width\": " + std::to_string(static_cast<int>(portal.width)) + ",\n";
+                    newPortals += "      \"height\": " + std::to_string(static_cast<int>(portal.height)) + ",\n";
+                    newPortals += "      \"targetLevel\": \"" + cleanTargetLevel + "\",\n";
+                    newPortals += "      \"spawnDirection\": \"" + cleanSpawnDirection + "\"";
+                    if (portal.useCustomSpawn) {
+                        newPortals += ",\n      \"useCustomSpawn\": true,\n";
+                        newPortals += "      \"customSpawnPos\": [" + std::to_string(static_cast<int>(portal.customSpawnPos.x)) + 
+                                     ", " + std::to_string(static_cast<int>(portal.customSpawnPos.y)) + "]";
+                    } else {
+                        newPortals += ",\n      \"useCustomSpawn\": false";
+                    }
+                    newPortals += "\n    }";
+                    if (i < currentLevel->portals.size() - 1) {
+                        newPortals += ",";
+                    }
+                    newPortals += "\n";
+                }
+                newPortals += "  ]";
+                content.insert(insertPos + 1, newPortals);
+            }
+        }
+    }
     // The existing portals in the file will be preserved as-is since we don't touch them
 
     // Write back to file
