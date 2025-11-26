@@ -25,6 +25,10 @@ set(SOURCES
     src/world/Checkpoint.cpp
     src/world/InteractiveObject.cpp
     src/world/LevelLoader.cpp
+    src/editor/EditorController.cpp
+    src/systems/CheckpointManager.cpp
+    src/systems/PortalSpawner.cpp
+    src/systems/SaveManager.cpp
     src/physics/CollisionSystem.cpp
     src/ui/GameUI.cpp
     src/ui/Menu.cpp
@@ -66,6 +70,10 @@ set(HEADERS
     include/world/Checkpoint.h
     include/world/InteractiveObject.h
     include/world/LevelLoader.h
+    include/editor/EditorController.h
+    include/systems/CheckpointManager.h
+    include/systems/PortalSpawner.h
+    include/systems/SaveManager.h
     include/physics/CollisionSystem.h
     include/physics/PhysicsConstants.h
     include/ui/GameUI.h

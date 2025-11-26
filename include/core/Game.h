@@ -26,6 +26,9 @@ class TitleScreen;
 class PauseMenu;
 class SettingsMenu;
 class KeyBindingMenu;
+class EditorController;
+class CheckpointManager;
+class SaveManager;
 
 class Game {
 public:
@@ -118,6 +121,9 @@ private:
     std::unique_ptr<PauseMenu> pauseMenu;
     std::unique_ptr<SettingsMenu> settingsMenu;
     std::unique_ptr<KeyBindingMenu> keyBindingMenu;
+    std::unique_ptr<EditorController> editorController;
+    std::unique_ptr<CheckpointManager> checkpointManager;
+    std::unique_ptr<SaveManager> saveManager;
 
     // Background walls
     sf::Texture* bgWallPlain32;
@@ -137,37 +143,4 @@ private:
     bool doorKeyHeld = false;
     float lastAbilityTimer = 0.0f;
 
-    // Editor mode
-    enum class EditorObjectType {
-        Platform,
-        PatrolEnemy,
-        FlyingEnemy,
-        Spike,
-        Terminal,
-        Door,
-        Turret,
-        Checkpoint,
-        Portal
-    };
-    EditorObjectType editorObjectType = EditorObjectType::Platform;
-    int selectedPlatformIndex = -1;
-    int selectedEnemyIndex = -1;
-    int selectedInteractiveIndex = -1;
-    int selectedCheckpointIndex = -1;
-    int selectedPortalIndex = -1;
-    bool isDraggingPlatform = false;
-    bool isDraggingEnemy = false;
-    bool isDraggingInteractive = false;
-    bool isDraggingCheckpoint = false;
-    bool isDraggingPortal = false;
-    sf::Vector2f dragOffset;
-    sf::Font editorFont;
-    sf::Text editorText;
-    sf::Text saveMessageText;
-    float saveMessageTimer = 0.0f;
-    void handleEditorInput();
-    void updateEditor(float dt);
-    void renderEditor();
-    void saveLevelToFile();
-    sf::Vector2f screenToWorld(const sf::Vector2f& screenPos);
 };
