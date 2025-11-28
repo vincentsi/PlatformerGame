@@ -56,6 +56,21 @@ private:
     };
 
     ObjectType objectType = ObjectType::Platform;
+    
+    // Enemy preset selection
+    enum class EnemyPresetType {
+        Basic,
+        Medium,
+        Strong,
+        Shooter,
+        FastShooter,
+        Boss,
+        Fast,
+        FlyingBasic,
+        FlyingShooter
+    };
+    EnemyPresetType currentEnemyPreset = EnemyPresetType::Basic;
+    
     int selectedPlatformIndex = -1;
     int selectedEnemyIndex = -1;
     int selectedInteractiveIndex = -1;
@@ -78,5 +93,10 @@ private:
     void setSaveMessage(const std::string& message, const sf::Color& color);
     void changeObjectType(ObjectType type);
     void reloadLevel(EditorContext& ctx);
+    
+    // Enemy preset helpers
+    struct EnemyStats getPresetStats(EnemyPresetType preset) const;
+    std::string getPresetName(EnemyPresetType preset) const;
+    void applyPresetToEnemy(Enemy* enemy, EnemyPresetType preset, EditorContext& ctx);
 };
 

@@ -11,6 +11,7 @@
 #include "entities/Spike.h"
 #include "entities/FlyingEnemy.h"
 #include "entities/KineticWaveProjectile.h"
+#include "entities/EnemyProjectile.h"
 #include "world/Platform.h"
 #include "world/Camera.h"
 #include "world/Checkpoint.h"
@@ -720,6 +721,44 @@ void Game::update(float dt) {
         }
     }
     
+    // Update enemy projectiles
+    for (auto& projectile : enemyProjectiles) {
+        if (!projectile || !projectile->isAlive()) {
+            continue;
+        }
+        projectile->update(dt);
+        
+        // Check collision with player
+        if (player && !player->isDead() && !player->isInvincible()) {
+            if (projectile->getBounds().intersects(player->getBounds())) {
+                player->takeDamage(projectile->getDamage());
+                projectile->kill();
+                
+                if (!player->isDead()) {
+                    audioManager->playSound("jump", 60.0f);
+                    cameraShake->shakeLight();
+                }
+            }
+        }
+        
+        // Check collision with platforms
+        for (const auto& platform : platforms) {
+            if (platform && projectile->getBounds().intersects(platform->getBounds())) {
+                projectile->kill();
+                break;
+            }
+        }
+    }
+    
+    // Remove dead enemy projectiles
+    enemyProjectiles.erase(
+        std::remove_if(enemyProjectiles.begin(), enemyProjectiles.end(),
+            [](const std::unique_ptr<EnemyProjectile>& proj) -> bool {
+                return !proj || !proj->isAlive();
+            }),
+        enemyProjectiles.end()
+    );
+    
     // Remove dead projectiles (swap-and-pop to avoid extra allocations)
     for (std::size_t i = 0; i < kineticWaveProjectiles.size(); ) {
         if (!kineticWaveProjectiles[i] || !kineticWaveProjectiles[i]->isAlive()) {
@@ -789,12 +828,20 @@ void Game::update(float dt) {
                     enemyPos.y + enemySize.y / 2.0f
                 );
                 
-                enemy->kill();
+                // Deal damage instead of instant kill
+                bool wasAlive = enemy->isAlive();
+                enemy->takeDamage(Config::ATTACK_DAMAGE);
                 
-                // Effects
-                particleSystem->emitDeath(sf::Vector2f(enemyCenter.x, enemyCenter.y));
-                audioManager->playSound("death", 60.0f);
-                cameraShake->shakeLight();
+                // Effects only if enemy died
+                if (wasAlive && !enemy->isAlive()) {
+                    particleSystem->emitDeath(sf::Vector2f(enemyCenter.x, enemyCenter.y));
+                    audioManager->playSound("death", 60.0f);
+                    cameraShake->shakeLight();
+                } else if (enemy->isAlive()) {
+                    // Hit effect for damage
+                    particleSystem->emitJump(sf::Vector2f(enemyCenter.x, enemyCenter.y));
+                    audioManager->playSound("jump", 40.0f);
+                }
             }
         }
     }
@@ -807,7 +854,51 @@ void Game::update(float dt) {
 
         // Don't update enemy movement in editor mode
         if (gameState != GameState::Editor) {
-        enemy->update(dt);
+            enemy->update(dt);
+            
+            // Handle enemy shooting
+            if (enemy->getStats().canShoot && enemy->canShoot()) {
+                // Check if player is in range
+                if (player) {
+                    sf::Vector2f enemyPos = enemy->getPosition();
+                    sf::Vector2f enemySize = enemy->getSize();
+                    sf::Vector2f enemyCenter = sf::Vector2f(
+                        enemyPos.x + enemySize.x / 2.0f,
+                        enemyPos.y + enemySize.y / 2.0f
+                    );
+                    sf::Vector2f playerPos = player->getPosition();
+                    sf::Vector2f playerSize = player->getSize();
+                    sf::Vector2f playerCenter = sf::Vector2f(
+                        playerPos.x + playerSize.x / 2.0f,
+                        playerPos.y + playerSize.y / 2.0f
+                    );
+                    
+                    sf::Vector2f toPlayer = playerCenter - enemyCenter;
+                    float distance = std::sqrt(toPlayer.x * toPlayer.x + toPlayer.y * toPlayer.y);
+                    
+                    // Check if player is in shooting range and cooldown is ready
+                    // Access shootTimer through a getter or make it accessible
+                    // For now, we'll check if canShoot() returns true
+                    if (distance <= enemy->getStats().shootRange && enemy->canShoot()) {
+                        // Normalize direction
+                        sf::Vector2f direction = (distance > 0.0f) 
+                            ? sf::Vector2f(toPlayer.x / distance, toPlayer.y / distance)
+                            : sf::Vector2f(1.0f, 0.0f);
+                        
+                        // Create projectile
+                        enemyProjectiles.push_back(std::make_unique<EnemyProjectile>(
+                            enemyCenter,
+                            direction,
+                            enemy->getStats().projectileSpeed,
+                            enemy->getStats().projectileRange,
+                            enemy->getStats().damage
+                        ));
+                        
+                        // Reset cooldown
+                        enemy->resetShootTimer();
+                    }
+                }
+            }
         }
 
         // Check collision with player
@@ -846,16 +937,24 @@ void Game::update(float dt) {
                         audioManager->playSound("jump", 80.0f);
                         cameraShake->shakeLight();
                     } else {
-                        // Kill enemy (normal behavior)
-                        enemy->kill();
+                        // Deal damage to enemy (normal behavior)
+                        bool wasAlive = enemy->isAlive();
+                        enemy->takeDamage(1); // Stomp deals 1 damage
 
                         // Bounce player up
                         player->setVelocity(player->getVelocity().x, Config::ENEMY_BOUNCE_VELOCITY);
 
                         // Effects
                         sf::Vector2f enemyPos = enemy->getPosition();
-                        particleSystem->emitDeath(sf::Vector2f(enemyPos.x + 15.0f, enemyPos.y + 15.0f));
-                        audioManager->playSound("death", 80.0f);
+                        if (wasAlive && !enemy->isAlive()) {
+                            // Enemy died
+                            particleSystem->emitDeath(sf::Vector2f(enemyPos.x + 15.0f, enemyPos.y + 15.0f));
+                            audioManager->playSound("death", 80.0f);
+                        } else {
+                            // Enemy took damage but survived
+                            particleSystem->emitJump(sf::Vector2f(enemyPos.x + 15.0f, enemyPos.y + 15.0f));
+                            audioManager->playSound("jump", 60.0f);
+                        }
                         cameraShake->shakeLight();
                     }
                 } else {
@@ -997,6 +1096,12 @@ void Game::render() {
         }
 
         for (const auto& projectile : kineticWaveProjectiles) {
+            if (projectile && projectile->isAlive()) {
+                projectile->draw(window);
+            }
+        }
+        
+        for (const auto& projectile : enemyProjectiles) {
             if (projectile && projectile->isAlive()) {
                 projectile->draw(window);
             }

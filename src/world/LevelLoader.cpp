@@ -2,6 +2,7 @@
 #include "entities/PatrolEnemy.h"
 #include "entities/FlyingEnemy.h"
 #include "entities/Spike.h"
+#include "entities/EnemyStatsPresets.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -199,11 +200,65 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
                 
                 if (typeStr == "patrol") {
                     float patrolDistance = e.value("patrolDistance", 100.0f);
-                    levelData->enemies.push_back(std::make_unique<PatrolEnemy>(x, y, patrolDistance));
+                    // Load enemy stats from JSON or use defaults
+                    EnemyStats stats;
+                    if (e.contains("maxHP")) {
+                        stats.maxHP = e.value("maxHP", 1);
+                        stats.sizeX = e.value("sizeX", 30.0f);
+                        stats.sizeY = e.value("sizeY", 30.0f);
+                        stats.speed = e.value("speed", 80.0f);
+                        stats.damage = e.value("damage", 1);
+                        stats.canShoot = e.value("canShoot", false);
+                        if (stats.canShoot && e.contains("shootCooldown")) {
+                            stats.shootCooldown = e.value("shootCooldown", 2.0f);
+                            stats.projectileSpeed = e.value("projectileSpeed", 300.0f);
+                            stats.projectileRange = e.value("projectileRange", 500.0f);
+                            stats.shootRange = e.value("shootRange", 400.0f);
+                        }
+                        // Load color if available (optional)
+                        if (e.contains("colorR") && e.contains("colorG") && e.contains("colorB")) {
+                            stats.color = sf::Color(
+                                e.value("colorR", 255),
+                                e.value("colorG", 0),
+                                e.value("colorB", 0)
+                            );
+                        }
+                    } else {
+                        // Use default preset if no stats in JSON
+                        stats = EnemyPresets::Basic();
+                    }
+                    levelData->enemies.push_back(std::make_unique<PatrolEnemy>(x, y, patrolDistance, stats));
                 } else if (typeStr == "flying") {
                     float patrolDistance = e.value("patrolDistance", 200.0f);
                     bool horizontalPatrol = e.value("horizontalPatrol", true);
-                    levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol));
+                    // Load enemy stats from JSON or use defaults
+                    EnemyStats stats;
+                    if (e.contains("maxHP")) {
+                        stats.maxHP = e.value("maxHP", 1);
+                        stats.sizeX = e.value("sizeX", 28.0f);
+                        stats.sizeY = e.value("sizeY", 28.0f);
+                        stats.speed = e.value("speed", 60.0f);
+                        stats.damage = e.value("damage", 1);
+                        stats.canShoot = e.value("canShoot", false);
+                        if (stats.canShoot && e.contains("shootCooldown")) {
+                            stats.shootCooldown = e.value("shootCooldown", 2.0f);
+                            stats.projectileSpeed = e.value("projectileSpeed", 300.0f);
+                            stats.projectileRange = e.value("projectileRange", 500.0f);
+                            stats.shootRange = e.value("shootRange", 400.0f);
+                        }
+                        // Load color if available (optional)
+                        if (e.contains("colorR") && e.contains("colorG") && e.contains("colorB")) {
+                            stats.color = sf::Color(
+                                e.value("colorR", 150),
+                                e.value("colorG", 0),
+                                e.value("colorB", 255)
+                            );
+                        }
+                    } else {
+                        // Use default preset if no stats in JSON
+                        stats = EnemyPresets::FlyingBasic();
+                    }
+                    levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol, stats));
                 } else if (typeStr == "spike") {
                     levelData->enemies.push_back(std::make_unique<Spike>(x, y));
                 }

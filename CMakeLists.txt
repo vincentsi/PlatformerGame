@@ -19,6 +19,7 @@ set(SOURCES
     src/entities/Spike.cpp
     src/entities/FlyingEnemy.cpp
     src/entities/KineticWaveProjectile.cpp
+    src/entities/EnemyProjectile.cpp
     src/world/Platform.cpp
     src/world/Camera.cpp
     src/world/GoalZone.cpp

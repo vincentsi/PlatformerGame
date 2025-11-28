@@ -2,6 +2,7 @@
 #include "entities/Enemy.h"
 #include "entities/FlyingEnemy.h"
 #include "entities/PatrolEnemy.h"
+#include "entities/EnemyStatsPresets.h"
 #include "entities/Player.h"
 #include "entities/Spike.h"
 #include "world/Checkpoint.h"
@@ -295,12 +296,29 @@ void EditorController::handleEvent(const sf::Event& event, EditorContext& ctx) {
                     }
                     if (!clickedObject) {
                         switch (objectType) {
-                            case ObjectType::PatrolEnemy:
-                                ctx.enemies.push_back(std::make_unique<PatrolEnemy>(worldPos.x, worldPos.y, 100.0f));
+                            case ObjectType::PatrolEnemy: {
+                                EnemyStats stats = getPresetStats(currentEnemyPreset);
+                                // Only use ground presets for PatrolEnemy
+                                if (currentEnemyPreset == EnemyPresetType::FlyingBasic || 
+                                    currentEnemyPreset == EnemyPresetType::FlyingShooter) {
+                                    stats = EnemyPresets::Basic();
+                                }
+                                ctx.enemies.push_back(std::make_unique<PatrolEnemy>(worldPos.x, worldPos.y, 100.0f, stats));
                                 break;
-                            case ObjectType::FlyingEnemy:
-                                ctx.enemies.push_back(std::make_unique<FlyingEnemy>(worldPos.x, worldPos.y, 200.0f, true));
+                            }
+                            case ObjectType::FlyingEnemy: {
+                                EnemyStats stats = EnemyPresets::FlyingBasic();
+                                // Use flying presets for FlyingEnemy
+                                if (currentEnemyPreset == EnemyPresetType::FlyingBasic) {
+                                    stats = EnemyPresets::FlyingBasic();
+                                } else if (currentEnemyPreset == EnemyPresetType::FlyingShooter) {
+                                    stats = EnemyPresets::FlyingShooter();
+                                } else {
+                                    stats = EnemyPresets::FlyingBasic();
+                                }
+                                ctx.enemies.push_back(std::make_unique<FlyingEnemy>(worldPos.x, worldPos.y, 200.0f, true, stats));
                                 break;
+                            }
                             case ObjectType::Spike:
                                 ctx.enemies.push_back(std::make_unique<Spike>(worldPos.x, worldPos.y));
                                 break;
@@ -413,6 +431,30 @@ void EditorController::handleEvent(const sf::Event& event, EditorContext& ctx) {
             case sf::Keyboard::Num1: changeObjectType(ObjectType::Platform); break;
             case sf::Keyboard::Num2: changeObjectType(ObjectType::PatrolEnemy); break;
             case sf::Keyboard::Num3: changeObjectType(ObjectType::FlyingEnemy); break;
+            
+            // Change enemy preset with P key
+            case sf::Keyboard::P: {
+                if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(ctx.enemies.size())) {
+                    // Cycle through presets for selected enemy
+                    int presetCount = 9; // Total number of presets
+                    int currentPresetInt = static_cast<int>(currentEnemyPreset);
+                    currentPresetInt = (currentPresetInt + 1) % presetCount;
+                    currentEnemyPreset = static_cast<EnemyPresetType>(currentPresetInt);
+                    
+                    // Apply preset to selected enemy
+                    Enemy* enemy = ctx.enemies[selectedEnemyIndex].get();
+                    if (enemy) {
+                        applyPresetToEnemy(enemy, currentEnemyPreset, ctx);
+                    }
+                } else {
+                    // Cycle preset for future enemies
+                    int presetCount = 9;
+                    int currentPresetInt = static_cast<int>(currentEnemyPreset);
+                    currentPresetInt = (currentPresetInt + 1) % presetCount;
+                    currentEnemyPreset = static_cast<EnemyPresetType>(currentPresetInt);
+                }
+                break;
+            }
             case sf::Keyboard::Num4: changeObjectType(ObjectType::Spike); break;
             case sf::Keyboard::Num5: changeObjectType(ObjectType::Terminal); break;
             case sf::Keyboard::Num6: changeObjectType(ObjectType::Door); break;
@@ -824,6 +866,7 @@ void EditorController::render(EditorContext& ctx) {
             "+/-: Largeur plateforme\n"
             "PageUp/Down: Hauteur plateforme\n"
             "T: Changer type plateforme / direction spawn portail\n"
+            "P: Changer preset ennemi (" + getPresetName(currentEnemyPreset) + ")\n"
             "Plateformes: " + std::to_string(ctx.platforms.size()) + "\n"
             "Ennemis: " + std::to_string(ctx.enemies.size()) + "\n"
             "Objets interactifs: " + std::to_string(ctx.interactiveObjects.size()));
@@ -832,6 +875,17 @@ void EditorController::render(EditorContext& ctx) {
             Enemy* enemy = ctx.enemies[selectedEnemyIndex].get();
             if (enemy->getType() == EnemyType::Patrol || enemy->getType() == EnemyType::Flying) {
                 editorText.setString(editorText.getString() + "\nQ/W: Distance patrouille (" + std::to_string(static_cast<int>(enemy->getPatrolDistance())) + ")");
+                
+                // Show enemy stats
+                editorText.setString(editorText.getString() + "\nP: Changer preset (actuel: " + getPresetName(currentEnemyPreset) + ")");
+                editorText.setString(editorText.getString() + "\nHP: " + std::to_string(enemy->getHP()) + "/" + std::to_string(enemy->getMaxHP()));
+                editorText.setString(editorText.getString() + "\nVitesse: " + std::to_string(static_cast<int>(enemy->getStats().speed)));
+                editorText.setString(editorText.getString() + "\nDégâts: " + std::to_string(enemy->getStats().damage));
+                if (enemy->getStats().canShoot) {
+                    editorText.setString(editorText.getString() + "\nTire: Oui (cooldown: " + std::to_string(static_cast<int>(enemy->getStats().shootCooldown)) + "s)");
+                } else {
+                    editorText.setString(editorText.getString() + "\nTire: Non");
+                }
             }
         }
 
@@ -973,10 +1027,38 @@ void EditorController::saveLevel(EditorContext& ctx) {
         if (dynamic_cast<PatrolEnemy*>(enemy.get())) {
             e["type"] = "patrol";
             e["patrolDistance"] = enemy->getPatrolDistance();
+            // Save enemy stats
+            const EnemyStats& stats = enemy->getStats();
+            e["maxHP"] = stats.maxHP;
+            e["sizeX"] = stats.sizeX;
+            e["sizeY"] = stats.sizeY;
+            e["speed"] = stats.speed;
+            e["damage"] = stats.damage;
+            e["canShoot"] = stats.canShoot;
+            if (stats.canShoot) {
+                e["shootCooldown"] = stats.shootCooldown;
+                e["projectileSpeed"] = stats.projectileSpeed;
+                e["projectileRange"] = stats.projectileRange;
+                e["shootRange"] = stats.shootRange;
+            }
         } else if (dynamic_cast<FlyingEnemy*>(enemy.get())) {
             e["type"] = "flying";
             e["patrolDistance"] = enemy->getPatrolDistance();
             e["horizontalPatrol"] = true;
+            // Save enemy stats
+            const EnemyStats& stats = enemy->getStats();
+            e["maxHP"] = stats.maxHP;
+            e["sizeX"] = stats.sizeX;
+            e["sizeY"] = stats.sizeY;
+            e["speed"] = stats.speed;
+            e["damage"] = stats.damage;
+            e["canShoot"] = stats.canShoot;
+            if (stats.canShoot) {
+                e["shootCooldown"] = stats.shootCooldown;
+                e["projectileSpeed"] = stats.projectileSpeed;
+                e["projectileRange"] = stats.projectileRange;
+                e["shootRange"] = stats.shootRange;
+            }
         } else if (dynamic_cast<Spike*>(enemy.get())) {
             e["type"] = "spike";
         }
@@ -1120,12 +1202,37 @@ fallback_save:
     for (size_t i = 0; i < ctx.enemies.size(); ++i) {
         Enemy* enemy = ctx.enemies[i].get();
         sf::Vector2f pos = enemy->getPosition();
+        const EnemyStats& stats = enemy->getStats();
         enemiesStream << "    { \"x\": " << static_cast<int>(pos.x)
                       << ", \"y\": " << static_cast<int>(pos.y);
         if (dynamic_cast<PatrolEnemy*>(enemy)) {
-            enemiesStream << ", \"type\": \"patrol\", \"patrolDistance\": " << static_cast<int>(enemy->getPatrolDistance());
+            enemiesStream << ", \"type\": \"patrol\", \"patrolDistance\": " << static_cast<int>(enemy->getPatrolDistance())
+                          << ", \"maxHP\": " << stats.maxHP
+                          << ", \"sizeX\": " << static_cast<int>(stats.sizeX)
+                          << ", \"sizeY\": " << static_cast<int>(stats.sizeY)
+                          << ", \"speed\": " << static_cast<int>(stats.speed)
+                          << ", \"damage\": " << stats.damage
+                          << ", \"canShoot\": " << (stats.canShoot ? "true" : "false");
+            if (stats.canShoot) {
+                enemiesStream << ", \"shootCooldown\": " << stats.shootCooldown
+                              << ", \"projectileSpeed\": " << static_cast<int>(stats.projectileSpeed)
+                              << ", \"projectileRange\": " << static_cast<int>(stats.projectileRange)
+                              << ", \"shootRange\": " << static_cast<int>(stats.shootRange);
+            }
         } else if (dynamic_cast<FlyingEnemy*>(enemy)) {
-            enemiesStream << ", \"type\": \"flying\", \"patrolDistance\": " << static_cast<int>(enemy->getPatrolDistance()) << ", \"horizontalPatrol\": true";
+            enemiesStream << ", \"type\": \"flying\", \"patrolDistance\": " << static_cast<int>(enemy->getPatrolDistance()) << ", \"horizontalPatrol\": true"
+                          << ", \"maxHP\": " << stats.maxHP
+                          << ", \"sizeX\": " << static_cast<int>(stats.sizeX)
+                          << ", \"sizeY\": " << static_cast<int>(stats.sizeY)
+                          << ", \"speed\": " << static_cast<int>(stats.speed)
+                          << ", \"damage\": " << stats.damage
+                          << ", \"canShoot\": " << (stats.canShoot ? "true" : "false");
+            if (stats.canShoot) {
+                enemiesStream << ", \"shootCooldown\": " << stats.shootCooldown
+                              << ", \"projectileSpeed\": " << static_cast<int>(stats.projectileSpeed)
+                              << ", \"projectileRange\": " << static_cast<int>(stats.projectileRange)
+                              << ", \"shootRange\": " << static_cast<int>(stats.shootRange);
+            }
         } else if (dynamic_cast<Spike*>(enemy)) {
             enemiesStream << ", \"type\": \"spike\"";
         }
@@ -1216,5 +1323,109 @@ fallback_save:
 
     resetState();
     setSaveMessage("Niveau sauvegarde !", sf::Color::Green);
+}
+
+EnemyStats EditorController::getPresetStats(EnemyPresetType preset) const {
+    switch (preset) {
+        case EnemyPresetType::Basic:
+            return EnemyPresets::Basic();
+        case EnemyPresetType::Medium:
+            return EnemyPresets::Medium();
+        case EnemyPresetType::Strong:
+            return EnemyPresets::Strong();
+        case EnemyPresetType::Shooter:
+            return EnemyPresets::Shooter();
+        case EnemyPresetType::FastShooter:
+            return EnemyPresets::FastShooter();
+        case EnemyPresetType::Boss:
+            return EnemyPresets::Boss();
+        case EnemyPresetType::Fast:
+            return EnemyPresets::Fast();
+        case EnemyPresetType::FlyingBasic:
+            return EnemyPresets::FlyingBasic();
+        case EnemyPresetType::FlyingShooter:
+            return EnemyPresets::FlyingShooter();
+        default:
+            return EnemyPresets::Basic();
+    }
+}
+
+std::string EditorController::getPresetName(EnemyPresetType preset) const {
+    switch (preset) {
+        case EnemyPresetType::Basic:
+            return "Basic";
+        case EnemyPresetType::Medium:
+            return "Medium";
+        case EnemyPresetType::Strong:
+            return "Strong";
+        case EnemyPresetType::Shooter:
+            return "Shooter";
+        case EnemyPresetType::FastShooter:
+            return "FastShooter";
+        case EnemyPresetType::Boss:
+            return "Boss";
+        case EnemyPresetType::Fast:
+            return "Fast";
+        case EnemyPresetType::FlyingBasic:
+            return "FlyingBasic";
+        case EnemyPresetType::FlyingShooter:
+            return "FlyingShooter";
+        default:
+            return "Basic";
+    }
+}
+
+void EditorController::applyPresetToEnemy(Enemy* enemy, EnemyPresetType preset, EditorContext& ctx) {
+    if (!enemy || selectedEnemyIndex < 0 || selectedEnemyIndex >= static_cast<int>(ctx.enemies.size())) {
+        return;
+    }
+    
+    EnemyStats newStats = getPresetStats(preset);
+    
+    // Get current enemy properties
+    sf::Vector2f pos = enemy->getPosition();
+    EnemyType enemyType = enemy->getType();
+    
+    // For PatrolEnemy, get patrol distance
+    float patrolDistance = 100.0f;
+    if (enemyType == EnemyType::Patrol || enemyType == EnemyType::Flying) {
+        patrolDistance = enemy->getPatrolDistance();
+    }
+    
+    // For FlyingEnemy, check if it's horizontal or vertical
+    bool isHorizontal = true;
+    if (auto* flyingEnemy = dynamic_cast<FlyingEnemy*>(enemy)) {
+        // Check if it has vertical bounds set (non-zero)
+        if (flyingEnemy->getTopBound() != 0.0f || flyingEnemy->getBottomBound() != 0.0f) {
+            isHorizontal = false;
+        }
+    }
+    
+    // Validate preset for enemy type
+    if (enemyType == EnemyType::Patrol) {
+        // Only use ground presets for PatrolEnemy
+        if (preset == EnemyPresetType::FlyingBasic || preset == EnemyPresetType::FlyingShooter) {
+            newStats = EnemyPresets::Basic();
+        }
+    } else if (enemyType == EnemyType::Flying) {
+        // Use flying presets for FlyingEnemy
+        if (preset != EnemyPresetType::FlyingBasic && preset != EnemyPresetType::FlyingShooter) {
+            newStats = EnemyPresets::FlyingBasic();
+        }
+    }
+    
+    // Recreate enemy with new stats
+    std::unique_ptr<Enemy> newEnemy;
+    if (enemyType == EnemyType::Patrol) {
+        newEnemy = std::make_unique<PatrolEnemy>(pos.x, pos.y, patrolDistance, newStats);
+    } else if (enemyType == EnemyType::Flying) {
+        newEnemy = std::make_unique<FlyingEnemy>(pos.x, pos.y, patrolDistance, isHorizontal, newStats);
+    } else {
+        // For Stationary (Spike), we can't change preset easily
+        return;
+    }
+    
+    // Replace the enemy
+    ctx.enemies[selectedEnemyIndex] = std::move(newEnemy);
 }
 

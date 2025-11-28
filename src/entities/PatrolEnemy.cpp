@@ -1,19 +1,21 @@
 #include "entities/PatrolEnemy.h"
 
-PatrolEnemy::PatrolEnemy(float x, float y, float patrolDistance)
-    : Enemy(x, y, EnemyType::Patrol)
+PatrolEnemy::PatrolEnemy(float x, float y, float patrolDistance, const EnemyStats& stats)
+    : Enemy(x, y, EnemyType::Patrol, stats)
     , direction(Direction::Right)
 {
-    speed = 80.0f;
     setPatrolBounds(x - patrolDistance / 2.0f, x + patrolDistance / 2.0f);
 }
 
 void PatrolEnemy::update(float dt) {
     if (!alive) return;
+    
+    // Call base class update to handle shoot timer
+    Enemy::update(dt);
 
     // Move based on direction
     if (direction == Direction::Right) {
-        position.x += speed * dt;
+        position.x += stats.speed * dt;
 
         // Check if reached right bound
         if (position.x >= patrolRightBound) {
@@ -21,7 +23,7 @@ void PatrolEnemy::update(float dt) {
             direction = Direction::Left;
         }
     } else {
-        position.x -= speed * dt;
+        position.x -= stats.speed * dt;
 
         // Check if reached left bound
         if (position.x <= patrolLeftBound) {

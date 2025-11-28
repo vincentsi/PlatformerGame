@@ -147,7 +147,9 @@
     }
   ],
   "enemies": [
-    { "x": 1180, "y": 368, "type": "patrol", "patrolDistance": 100 }
+    { "x": 1209, "y": 368, "type": "patrol", "patrolDistance": 100, "maxHP": 1, "sizeX": 30, "sizeY": 30, "speed": 100, "damage": 1, "canShoot": false },
+    { "x": 855, "y": 333, "type": "flying", "patrolDistance": 200, "horizontalPatrol": true, "maxHP": 1, "sizeX": 30, "sizeY": 30, "speed": 100, "damage": 1, "canShoot": false },
+    { "x": 547, "y": 35, "type": "patrol", "patrolDistance": 100, "maxHP": 10, "sizeX": 60, "sizeY": 60, "speed": 50, "damage": 2, "canShoot": true, "shootCooldown": 1.5, "projectileSpeed": 350, "projectileRange": 700, "shootRange": 600 }
   ],
 
   "goalZone": {

@@ -4,7 +4,7 @@
 
 class PatrolEnemy : public Enemy {
 public:
-    PatrolEnemy(float x, float y, float patrolDistance = 150.0f);
+    PatrolEnemy(float x, float y, float patrolDistance = 150.0f, const EnemyStats& stats = EnemyStats());
 
     void update(float dt) override;
 

@@ -12,6 +12,7 @@
 class Player;
 class Enemy;
 class KineticWaveProjectile;
+class EnemyProjectile;
 class Platform;
 class Camera;
 class Checkpoint;
@@ -71,6 +72,7 @@ private:
     std::vector<std::unique_ptr<InteractiveObject>> interactiveObjects;
     std::vector<std::unique_ptr<Enemy>> enemies;
     std::vector<std::unique_ptr<KineticWaveProjectile>> kineticWaveProjectiles;
+    std::vector<std::unique_ptr<EnemyProjectile>> enemyProjectiles;
     std::unique_ptr<Camera> camera;
     std::unique_ptr<GameUI> gameUI;
 
