@@ -27,6 +27,8 @@ public:
     void stopMoving();
     void attack();
     bool canAttack() const;
+    void dash();
+    bool canDash() const;
 
     void setGrounded(bool grounded);
     bool getIsGrounded() const { return isGrounded; }
@@ -66,6 +68,7 @@ public:
     float getAbilityCooldown() const;
     float getAbilityCooldownRemaining() const;
     float getAttackCooldownRemaining() const { return attackCooldownRemaining; }
+    float getDashCooldownRemaining() const { return dashCooldownRemaining; }
     int getFacingDirection() const { return facingDirection; } // 1 = right, -1 = left, 0 = down, 2 = up
     
     // Ability states
@@ -197,6 +200,11 @@ private:
     float abilityCooldown;
     float abilityCooldownRemaining;
     float attackCooldownRemaining;
+    
+    // Dash
+    bool dashing;
+    float dashTimer;
+    float dashCooldownRemaining;
     
     // Lyra - Kinetic Wave
     bool kineticWaveActive;

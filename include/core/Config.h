@@ -53,6 +53,11 @@ namespace Config {
     constexpr float ATTACK_DISTANCE = 50.0f;          // Distance from player center to attack hitbox
     constexpr float ATTACK_COOLDOWN = 0.5f;           // Attack cooldown in seconds
     constexpr int ATTACK_DAMAGE = 1;                   // Damage per attack
+    
+    // Dash settings
+    constexpr float DASH_SPEED = 800.0f;               // Dash velocity in pixels/s
+    constexpr float DASH_DURATION = 0.15f;             // Dash duration in seconds
+    constexpr float DASH_COOLDOWN = 1.0f;              // Dash cooldown in seconds
 
     // Gameplay constants
     constexpr float MAX_DELTA_TIME = 0.1f;            // Cap delta time to avoid spiral of death

@@ -48,6 +48,9 @@ Player::Player(float x, float y, CharacterType type)
     , abilityCooldown(0.0f)
     , abilityCooldownRemaining(0.0f)
     , attackCooldownRemaining(0.0f)
+    , dashing(false)
+    , dashTimer(0.0f)
+    , dashCooldownRemaining(0.0f)
     , kineticWaveActive(false)
     , kineticWaveJustActivated(false)
     , kineticWaveTimer(0.0f)
@@ -125,6 +128,21 @@ void Player::update(float dt) {
     updateCoyoteTime(dt);
     updateJumpBuffer(dt);
     updateAbilityCooldown(dt);
+    
+    // Update dash
+    if (dashing) {
+        dashTimer -= dt;
+        if (dashTimer <= 0.0f) {
+            dashing = false;
+        }
+    }
+    
+    if (dashCooldownRemaining > 0.0f) {
+        dashCooldownRemaining -= dt;
+        if (dashCooldownRemaining < 0.0f) {
+            dashCooldownRemaining = 0.0f;
+        }
+    }
     
     if (kineticWaveActive) {
         kineticWaveTimer -= dt;
@@ -210,11 +228,15 @@ void Player::draw(sf::RenderWindow& window) {
 }
 
 void Player::moveLeft() {
-    velocity.x = -getMoveSpeed();
+    if (!dashing) {
+        velocity.x = -getMoveSpeed();
+    }
 }
 
 void Player::moveRight() {
-    velocity.x = getMoveSpeed();
+    if (!dashing) {
+        velocity.x = getMoveSpeed();
+    }
 }
 
 void Player::jump() {
@@ -243,6 +265,11 @@ void Player::jump() {
 }
 
 void Player::stopMoving() {
+    // Don't apply friction during dash
+    if (dashing) {
+        return;
+    }
+    
     // Apply friction
     velocity.x *= Config::FRICTION;
 
@@ -492,6 +519,36 @@ void Player::attack() {
     // This just triggers the attack state
 }
 
+bool Player::canDash() const {
+    return dashCooldownRemaining <= 0.0f && !dead && !dashing;
+}
+
+void Player::dash() {
+    if (!canDash()) {
+        return;
+    }
+    
+    // Determine dash direction based on facing direction or velocity
+    float dashDirection = 0.0f;
+    if (std::abs(velocity.x) > 0.1f) {
+        dashDirection = (velocity.x > 0.0f) ? 1.0f : -1.0f;
+    } else if (facingDirection == 1) {
+        dashDirection = 1.0f; // Right
+    } else if (facingDirection == -1) {
+        dashDirection = -1.0f; // Left
+    } else {
+        dashDirection = 1.0f; // Default to right if no direction
+    }
+    
+    // Set dash velocity
+    dashing = true;
+    dashTimer = Config::DASH_DURATION;
+    velocity.x = dashDirection * Config::DASH_SPEED;
+    
+    // Set cooldown
+    dashCooldownRemaining = Config::DASH_COOLDOWN;
+}
+
 // Special abilities implementation
 void Player::useAbility() {
     if (!canUseAbility()) {
@@ -549,6 +606,8 @@ void Player::updateAbilityCooldown(float dt) {
             attackCooldownRemaining = 0.0f;
         }
     }
+    
+    // Update dash cooldown (already handled in update(), but keeping for consistency)
 }
 
 // Lyra - Kinetic Wave

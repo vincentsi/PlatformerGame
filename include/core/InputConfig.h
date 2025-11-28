@@ -9,6 +9,7 @@ struct InputBindings {
     sf::Keyboard::Key moveRight;
     sf::Keyboard::Key jump;
     sf::Keyboard::Key ability;
+    sf::Keyboard::Key dash;
     sf::Keyboard::Key menuUp;
     sf::Keyboard::Key menuDown;
     sf::Keyboard::Key menuSelect;
@@ -19,6 +20,7 @@ struct InputBindings {
         , moveRight(sf::Keyboard::D)
         , jump(sf::Keyboard::Space)
         , ability(sf::Keyboard::LShift)  // Default: Left Shift
+        , dash(sf::Keyboard::LControl)  // Default: Left Ctrl
         , menuUp(sf::Keyboard::W)
         , menuDown(sf::Keyboard::S)
         , menuSelect(sf::Keyboard::Enter)

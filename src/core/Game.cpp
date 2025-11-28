@@ -335,6 +335,17 @@ void Game::handleInput() {
         abilityKeyPressed = false;
     }
 
+    // Dash (one-shot activation on key press)
+    static bool dashKeyPressed = false;
+    if (sf::Keyboard::isKeyPressed(bindings.dash)) {
+        if (!dashKeyPressed && player->canDash()) {
+            player->dash();
+            dashKeyPressed = true;
+        }
+    } else {
+        dashKeyPressed = false;
+    }
+
     // Horizontal movement
     if (sf::Keyboard::isKeyPressed(bindings.moveLeft) || sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) {
         player->moveLeft();
