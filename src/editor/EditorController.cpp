@@ -668,8 +668,11 @@ void EditorController::render(EditorContext& ctx) {
     }
 
     for (size_t i = 0; i < ctx.enemies.size(); ++i) {
-        ctx.enemies[i]->draw(ctx.window);
         Enemy* enemy = ctx.enemies[i].get();
+        if (!enemy) continue; // Skip null enemies
+        
+        // Draw enemy even if dead (forceDraw = true for editor)
+        enemy->draw(ctx.window, true);
 
         if (enemy->getType() == EnemyType::Patrol || enemy->getType() == EnemyType::Flying) {
             sf::Vector2f pos = enemy->getPosition();
@@ -1020,6 +1023,7 @@ void EditorController::saveLevel(EditorContext& ctx) {
 
     j["enemies"] = nlohmann::json::array();
     for (const auto& enemy : ctx.enemies) {
+        if (!enemy) continue; // Skip null enemies
         sf::Vector2f pos = enemy->getPosition();
         nlohmann::json e;
         e["x"] = pos.x;
@@ -1035,6 +1039,10 @@ void EditorController::saveLevel(EditorContext& ctx) {
             e["speed"] = stats.speed;
             e["damage"] = stats.damage;
             e["canShoot"] = stats.canShoot;
+            // Save color
+            e["colorR"] = stats.color.r;
+            e["colorG"] = stats.color.g;
+            e["colorB"] = stats.color.b;
             if (stats.canShoot) {
                 e["shootCooldown"] = stats.shootCooldown;
                 e["projectileSpeed"] = stats.projectileSpeed;
@@ -1053,6 +1061,10 @@ void EditorController::saveLevel(EditorContext& ctx) {
             e["speed"] = stats.speed;
             e["damage"] = stats.damage;
             e["canShoot"] = stats.canShoot;
+            // Save color
+            e["colorR"] = stats.color.r;
+            e["colorG"] = stats.color.g;
+            e["colorB"] = stats.color.b;
             if (stats.canShoot) {
                 e["shootCooldown"] = stats.shootCooldown;
                 e["projectileSpeed"] = stats.projectileSpeed;
@@ -1201,6 +1213,7 @@ fallback_save:
     enemiesStream << "[\n";
     for (size_t i = 0; i < ctx.enemies.size(); ++i) {
         Enemy* enemy = ctx.enemies[i].get();
+        if (!enemy) continue; // Skip null enemies
         sf::Vector2f pos = enemy->getPosition();
         const EnemyStats& stats = enemy->getStats();
         enemiesStream << "    { \"x\": " << static_cast<int>(pos.x)
@@ -1212,7 +1225,10 @@ fallback_save:
                           << ", \"sizeY\": " << static_cast<int>(stats.sizeY)
                           << ", \"speed\": " << static_cast<int>(stats.speed)
                           << ", \"damage\": " << stats.damage
-                          << ", \"canShoot\": " << (stats.canShoot ? "true" : "false");
+                          << ", \"canShoot\": " << (stats.canShoot ? "true" : "false")
+                          << ", \"colorR\": " << static_cast<int>(stats.color.r)
+                          << ", \"colorG\": " << static_cast<int>(stats.color.g)
+                          << ", \"colorB\": " << static_cast<int>(stats.color.b);
             if (stats.canShoot) {
                 enemiesStream << ", \"shootCooldown\": " << stats.shootCooldown
                               << ", \"projectileSpeed\": " << static_cast<int>(stats.projectileSpeed)
@@ -1226,7 +1242,10 @@ fallback_save:
                           << ", \"sizeY\": " << static_cast<int>(stats.sizeY)
                           << ", \"speed\": " << static_cast<int>(stats.speed)
                           << ", \"damage\": " << stats.damage
-                          << ", \"canShoot\": " << (stats.canShoot ? "true" : "false");
+                          << ", \"canShoot\": " << (stats.canShoot ? "true" : "false")
+                          << ", \"colorR\": " << static_cast<int>(stats.color.r)
+                          << ", \"colorG\": " << static_cast<int>(stats.color.g)
+                          << ", \"colorB\": " << static_cast<int>(stats.color.b);
             if (stats.canShoot) {
                 enemiesStream << ", \"shootCooldown\": " << stats.shootCooldown
                               << ", \"projectileSpeed\": " << static_cast<int>(stats.projectileSpeed)

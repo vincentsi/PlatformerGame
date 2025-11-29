@@ -20,9 +20,6 @@
   ],
 
   "interactiveObjects": [
-    { "type": "terminal", "x": 349, "y": 498, "width": 50, "height": 50, "id": "interactive_0" },
-    { "type": "door", "x": 450, "y": 497, "width": 50, "height": 50, "id": "interactive_1" },
-    { "type": "turret", "x": 249, "y": 494, "width": 50, "height": 50, "id": "interactive_2" }
   ],
 
   "cameraZones": [{ "minX": 0, "maxX": 1210, "minY": 0, "maxY": 600 }],
@@ -40,9 +37,7 @@
   ],
 
   "enemies": [
-    { "type": "flying", "x": 1140, "y": 375, "patrolDistance": 759, "horizontalPatrol": true },
-    { "type": "spike", "x": 1097, "y": 528 },
-    { "type": "spike", "x": 994, "y": 528 }
+    { "x": 891, "y": 378, "type": "flying", "patrolDistance": 759, "horizontalPatrol": true, "maxHP": 1, "sizeX": 30, "sizeY": 30, "speed": 100, "damage": 1, "canShoot": false, "colorR": 255, "colorG": 0, "colorB": 0 }
   ],
 
   "goalZone": { "x": 0, "y": 0, "width": 0, "height": 0 }

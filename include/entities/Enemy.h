@@ -35,10 +35,12 @@ public:
 
     virtual void update(float dt);
     void draw(sf::RenderWindow& window) override;
+    void draw(sf::RenderWindow& window, bool forceDraw); // For editor: draw even if dead
 
     EnemyType getType() const { return type; }
     bool isAlive() const { return alive; }
     void kill();
+    void revive(); // Restore enemy to alive state (for editor)
     
     // HP system
     void takeDamage(int amount);

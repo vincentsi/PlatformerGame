@@ -22,9 +22,30 @@ void Enemy::draw(sf::RenderWindow& window) {
     }
 }
 
+void Enemy::draw(sf::RenderWindow& window, bool forceDraw) {
+    if (alive || forceDraw) {
+        // Draw with reduced opacity if dead
+        if (!alive && forceDraw) {
+            sf::Color originalColor = shape.getFillColor();
+            sf::Color drawColor = originalColor;
+            drawColor.a = 128; // 50% opacity for dead enemies
+            shape.setFillColor(drawColor);
+            window.draw(shape);
+            shape.setFillColor(originalColor); // Restore original color
+        } else {
+            window.draw(shape);
+        }
+    }
+}
+
 void Enemy::kill() {
     alive = false;
     currentHP = 0;
+}
+
+void Enemy::revive() {
+    alive = true;
+    currentHP = stats.maxHP;
 }
 
 void Enemy::takeDamage(int amount) {

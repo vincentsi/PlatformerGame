@@ -848,8 +848,17 @@ void Game::update(float dt) {
 
     // Update enemies (skip movement in editor mode)
     for (auto& enemy : enemies) {
-        if (!enemy || !enemy->isAlive()) {
-            continue; // Skip null or dead enemies (will be removed later)
+        if (!enemy) {
+            continue; // Skip null enemies
+        }
+        
+        // In editor mode, always show enemies even if dead
+        if (gameState == GameState::Editor && !enemy->isAlive()) {
+            continue; // Skip update for dead enemies in editor, but keep them in vector
+        }
+        
+        if (!enemy->isAlive()) {
+            continue; // Skip dead enemies in playing mode (will be removed later)
         }
 
         // Don't update enemy movement in editor mode
@@ -974,11 +983,12 @@ void Game::update(float dt) {
         }
     }
 
-    // Remove dead enemies from vector (cleanup after update)
+    // Keep dead enemies in vector so they remain available for the editor.
+    // (They are skipped for gameplay interactions elsewhere.)
     enemies.erase(
         std::remove_if(enemies.begin(), enemies.end(),
             [](const std::unique_ptr<Enemy>& enemy) -> bool {
-                return !enemy || !enemy->isAlive();
+                return !enemy; // remove null pointers only
             }),
         enemies.end()
     );
@@ -1212,9 +1222,11 @@ void Game::loadLevel() {
 }
 
 void Game::loadLevel(const std::string& levelPath) {
+    std::string resolvedPath = LevelLoader::resolveLevelPath(levelPath);
+
     // Load level from specified path
-    currentLevel = LevelLoader::loadFromFile(levelPath);
-    currentLevelPath = levelPath;
+    currentLevel = LevelLoader::loadFromFile(resolvedPath);
+    currentLevelPath = resolvedPath;
 
         if (currentLevel) {
             // Move data from LevelData to Game
@@ -1292,6 +1304,13 @@ void Game::loadLevel(const std::string& levelPath) {
 
         if (editorController) {
             editorController->resetState();
+        }
+        
+        // Reset all enemies to alive state when loading level (for editor visibility)
+        for (auto& enemy : enemies) {
+            if (enemy) {
+                enemy->revive();
+            }
         }
 
         // Reset level state
@@ -1440,13 +1459,18 @@ void Game::continueGame() {
     };
 
     ResumeInfo resumeInfo = saveManager->buildResumeInfo(possibleLevels);
+    std::string resolvedResumePath = LevelLoader::resolveLevelPath(resumeInfo.levelPath);
 
     if (!resumeInfo.levelData) {
-        resumeInfo.levelData = LevelLoader::loadFromFile(resumeInfo.levelPath);
+        resumeInfo.levelData = LevelLoader::loadFromFile(resolvedResumePath);
     }
     if (!resumeInfo.levelData) {
         resumeInfo.levelPath = "assets/levels/zone1_level1.json";
-        resumeInfo.levelData = LevelLoader::createDefaultLevel();
+        resolvedResumePath = LevelLoader::resolveLevelPath(resumeInfo.levelPath);
+        resumeInfo.levelData = LevelLoader::loadFromFile(resolvedResumePath);
+        if (!resumeInfo.levelData) {
+            resumeInfo.levelData = LevelLoader::createDefaultLevel();
+        }
     }
 
     currentLevel = std::move(resumeInfo.levelData);
@@ -1454,16 +1478,16 @@ void Game::continueGame() {
     checkpoints = std::move(currentLevel->checkpoints);
     interactiveObjects = std::move(currentLevel->interactiveObjects);
     enemies = std::move(currentLevel->enemies);
-    currentLevelPath = resumeInfo.levelPath;
+    currentLevelPath = resolvedResumePath;
 
     sf::Vector2f spawnPos;
     if (resumeInfo.hasCheckpoint) {
         spawnPos = resumeInfo.checkpointPos;
         activeCheckpointId = resumeInfo.checkpointId;
-        lastGlobalCheckpointLevel = resumeInfo.levelPath;
+        lastGlobalCheckpointLevel = resolvedResumePath;
         lastGlobalCheckpointId = resumeInfo.checkpointId;
         lastGlobalCheckpointPos = resumeInfo.checkpointPos;
-        levelCheckpoints[resumeInfo.levelPath] = resumeInfo.checkpointId;
+        levelCheckpoints[resolvedResumePath] = resumeInfo.checkpointId;
 
         for (auto& checkpoint : checkpoints) {
             if (checkpoint && checkpoint->getId() == activeCheckpointId) {
@@ -1588,6 +1612,20 @@ void Game::setState(GameState newState) {
     if (newState != gameState) {
         previousState = gameState;
         gameState = newState;
+
+        // When entering editor mode, reload level from disk to restore entities exactly
+        if (newState == GameState::Editor && !currentLevelPath.empty()) {
+            loadLevel(currentLevelPath);
+        }
+
+        // When entering editor mode, reset all enemies to alive state and restore positions
+        if (newState == GameState::Editor) {
+            for (auto& enemy : enemies) {
+                if (enemy) {
+                    enemy->revive();
+                }
+            }
+        }
 
         std::cout << "Game state changed to: " << static_cast<int>(gameState) << "\n";
     }

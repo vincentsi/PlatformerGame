@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iostream>
 #include <algorithm>
+#include <filesystem>
 
 // Optional: use nlohmann/json if available (header-only, single include)
 #if __has_include(<nlohmann/json.hpp>)
@@ -49,10 +50,62 @@ std::string extractValue(const std::string& str, const std::string& key) {
     return value;
 }
 
+std::string LevelLoader::resolveLevelPath(const std::string& filepath) {
+    namespace fs = std::filesystem;
+    fs::path inputPath(filepath);
+
+    if (inputPath.is_absolute()) {
+        std::error_code ec;
+        if (fs::exists(inputPath, ec)) {
+            return inputPath.string();
+        }
+        return filepath;
+    }
+
+    std::vector<fs::path> candidates;
+
+    // Prefer project source directory (PlatformerGame)
+    fs::path probe = fs::current_path();
+    for (int i = 0; i < 10 && !probe.empty(); ++i) {
+        if (probe.filename() == "PlatformerGame") {
+            candidates.push_back(probe / inputPath);
+            break;
+        }
+        probe = probe.parent_path();
+    }
+
+    // Current working directory
+    candidates.push_back(fs::current_path() / inputPath);
+
+    // Common build output directories
+    fs::path cwd = fs::current_path();
+    candidates.push_back(cwd / "bin" / "Release" / inputPath);
+    candidates.push_back(cwd / "bin" / "Debug" / inputPath);
+    candidates.push_back(cwd.parent_path() / inputPath);
+
+    for (const auto& candidate : candidates) {
+        if (candidate.empty()) continue;
+        std::error_code ec;
+        if (fs::exists(candidate, ec)) {
+            return candidate.string();
+        }
+    }
+
+    return filepath;
+}
+
 std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath) {
-    std::ifstream file(filepath);
+    std::string resolvedPath = resolveLevelPath(filepath);
+    std::ifstream file(resolvedPath);
     if (!file.is_open()) {
-        std::cout << "Warning: Could not open level file: " << filepath << "\n";
+        // Fallback to original path if resolution failed
+        if (resolvedPath != filepath) {
+            file.open(filepath);
+        }
+    }
+
+    if (!file.is_open()) {
+        std::cout << "Warning: Could not open level file: " << resolvedPath << "\n";
         std::cout << "Loading default level instead.\n";
         return createDefaultLevel();
     }
@@ -200,64 +253,44 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
                 
                 if (typeStr == "patrol") {
                     float patrolDistance = e.value("patrolDistance", 100.0f);
-                    // Load enemy stats from JSON or use defaults
-                    EnemyStats stats;
-                    if (e.contains("maxHP")) {
-                        stats.maxHP = e.value("maxHP", 1);
-                        stats.sizeX = e.value("sizeX", 30.0f);
-                        stats.sizeY = e.value("sizeY", 30.0f);
-                        stats.speed = e.value("speed", 80.0f);
-                        stats.damage = e.value("damage", 1);
-                        stats.canShoot = e.value("canShoot", false);
-                        if (stats.canShoot && e.contains("shootCooldown")) {
-                            stats.shootCooldown = e.value("shootCooldown", 2.0f);
-                            stats.projectileSpeed = e.value("projectileSpeed", 300.0f);
-                            stats.projectileRange = e.value("projectileRange", 500.0f);
-                            stats.shootRange = e.value("shootRange", 400.0f);
-                        }
-                        // Load color if available (optional)
-                        if (e.contains("colorR") && e.contains("colorG") && e.contains("colorB")) {
-                            stats.color = sf::Color(
-                                e.value("colorR", 255),
-                                e.value("colorG", 0),
-                                e.value("colorB", 0)
-                            );
-                        }
-                    } else {
-                        // Use default preset if no stats in JSON
-                        stats = EnemyPresets::Basic();
+                    // Start from preset defaults, then override with JSON values
+                    EnemyStats stats = EnemyPresets::Basic();
+                    stats.maxHP = e.value("maxHP", stats.maxHP);
+                    stats.sizeX = e.value("sizeX", stats.sizeX);
+                    stats.sizeY = e.value("sizeY", stats.sizeY);
+                    stats.speed = e.value("speed", stats.speed);
+                    stats.damage = e.value("damage", stats.damage);
+                    stats.canShoot = e.value("canShoot", stats.canShoot);
+                    if (stats.canShoot) {
+                        stats.shootCooldown = e.value("shootCooldown", stats.shootCooldown);
+                        stats.projectileSpeed = e.value("projectileSpeed", stats.projectileSpeed);
+                        stats.projectileRange = e.value("projectileRange", stats.projectileRange);
+                        stats.shootRange = e.value("shootRange", stats.shootRange);
                     }
+                    stats.color.r = static_cast<sf::Uint8>(e.value("colorR", static_cast<int>(stats.color.r)));
+                    stats.color.g = static_cast<sf::Uint8>(e.value("colorG", static_cast<int>(stats.color.g)));
+                    stats.color.b = static_cast<sf::Uint8>(e.value("colorB", static_cast<int>(stats.color.b)));
                     levelData->enemies.push_back(std::make_unique<PatrolEnemy>(x, y, patrolDistance, stats));
                 } else if (typeStr == "flying") {
                     float patrolDistance = e.value("patrolDistance", 200.0f);
                     bool horizontalPatrol = e.value("horizontalPatrol", true);
-                    // Load enemy stats from JSON or use defaults
-                    EnemyStats stats;
-                    if (e.contains("maxHP")) {
-                        stats.maxHP = e.value("maxHP", 1);
-                        stats.sizeX = e.value("sizeX", 28.0f);
-                        stats.sizeY = e.value("sizeY", 28.0f);
-                        stats.speed = e.value("speed", 60.0f);
-                        stats.damage = e.value("damage", 1);
-                        stats.canShoot = e.value("canShoot", false);
-                        if (stats.canShoot && e.contains("shootCooldown")) {
-                            stats.shootCooldown = e.value("shootCooldown", 2.0f);
-                            stats.projectileSpeed = e.value("projectileSpeed", 300.0f);
-                            stats.projectileRange = e.value("projectileRange", 500.0f);
-                            stats.shootRange = e.value("shootRange", 400.0f);
-                        }
-                        // Load color if available (optional)
-                        if (e.contains("colorR") && e.contains("colorG") && e.contains("colorB")) {
-                            stats.color = sf::Color(
-                                e.value("colorR", 150),
-                                e.value("colorG", 0),
-                                e.value("colorB", 255)
-                            );
-                        }
-                    } else {
-                        // Use default preset if no stats in JSON
-                        stats = EnemyPresets::FlyingBasic();
+                    // Start from preset defaults, then override with JSON values
+                    EnemyStats stats = EnemyPresets::FlyingBasic();
+                    stats.maxHP = e.value("maxHP", stats.maxHP);
+                    stats.sizeX = e.value("sizeX", stats.sizeX);
+                    stats.sizeY = e.value("sizeY", stats.sizeY);
+                    stats.speed = e.value("speed", stats.speed);
+                    stats.damage = e.value("damage", stats.damage);
+                    stats.canShoot = e.value("canShoot", stats.canShoot);
+                    if (stats.canShoot) {
+                        stats.shootCooldown = e.value("shootCooldown", stats.shootCooldown);
+                        stats.projectileSpeed = e.value("projectileSpeed", stats.projectileSpeed);
+                        stats.projectileRange = e.value("projectileRange", stats.projectileRange);
+                        stats.shootRange = e.value("shootRange", stats.shootRange);
                     }
+                    stats.color.r = static_cast<sf::Uint8>(e.value("colorR", static_cast<int>(stats.color.r)));
+                    stats.color.g = static_cast<sf::Uint8>(e.value("colorG", static_cast<int>(stats.color.g)));
+                    stats.color.b = static_cast<sf::Uint8>(e.value("colorB", static_cast<int>(stats.color.b)));
                     levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol, stats));
                 } else if (typeStr == "spike") {
                     levelData->enemies.push_back(std::make_unique<Spike>(x, y));
@@ -556,16 +589,81 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
                         float x = parseFloat(xVal);
                         float y = parseFloat(yVal);
                         
+                        auto parseBool = [](const std::string& val, bool defaultValue) {
+                            if (val.empty()) return defaultValue;
+                            std::string lower = val;
+                            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                            if (lower == "true" || lower == "1") return true;
+                            if (lower == "false" || lower == "0") return false;
+                            return defaultValue;
+                        };
+
                         if (typeVal == "patrol") {
                             std::string patrolDistVal = extractValue(obj, "patrolDistance");
                             float patrolDistance = patrolDistVal.empty() ? 100.0f : parseFloat(patrolDistVal);
-                            levelData->enemies.push_back(std::make_unique<PatrolEnemy>(x, y, patrolDistance));
+                            EnemyStats stats = EnemyPresets::Basic();
+                            std::string maxHpVal = extractValue(obj, "maxHP");
+                            if (!maxHpVal.empty()) stats.maxHP = static_cast<int>(parseFloat(maxHpVal));
+                            std::string sizeXVal = extractValue(obj, "sizeX");
+                            if (!sizeXVal.empty()) stats.sizeX = parseFloat(sizeXVal);
+                            std::string sizeYVal = extractValue(obj, "sizeY");
+                            if (!sizeYVal.empty()) stats.sizeY = parseFloat(sizeYVal);
+                            std::string speedVal = extractValue(obj, "speed");
+                            if (!speedVal.empty()) stats.speed = parseFloat(speedVal);
+                            std::string damageVal = extractValue(obj, "damage");
+                            if (!damageVal.empty()) stats.damage = static_cast<int>(parseFloat(damageVal));
+                            stats.canShoot = parseBool(extractValue(obj, "canShoot"), stats.canShoot);
+                            if (stats.canShoot) {
+                                std::string cooldownVal = extractValue(obj, "shootCooldown");
+                                if (!cooldownVal.empty()) stats.shootCooldown = parseFloat(cooldownVal);
+                                std::string projSpeedVal = extractValue(obj, "projectileSpeed");
+                                if (!projSpeedVal.empty()) stats.projectileSpeed = parseFloat(projSpeedVal);
+                                std::string projRangeVal = extractValue(obj, "projectileRange");
+                                if (!projRangeVal.empty()) stats.projectileRange = parseFloat(projRangeVal);
+                                std::string shootRangeVal = extractValue(obj, "shootRange");
+                                if (!shootRangeVal.empty()) stats.shootRange = parseFloat(shootRangeVal);
+                            }
+                            std::string colorRVal = extractValue(obj, "colorR");
+                            if (!colorRVal.empty()) stats.color.r = static_cast<sf::Uint8>(parseFloat(colorRVal));
+                            std::string colorGVal = extractValue(obj, "colorG");
+                            if (!colorGVal.empty()) stats.color.g = static_cast<sf::Uint8>(parseFloat(colorGVal));
+                            std::string colorBVal = extractValue(obj, "colorB");
+                            if (!colorBVal.empty()) stats.color.b = static_cast<sf::Uint8>(parseFloat(colorBVal));
+                            levelData->enemies.push_back(std::make_unique<PatrolEnemy>(x, y, patrolDistance, stats));
                         } else if (typeVal == "flying") {
                             std::string patrolDistVal = extractValue(obj, "patrolDistance");
                             float patrolDistance = patrolDistVal.empty() ? 200.0f : parseFloat(patrolDistVal);
                             std::string horizontalVal = extractValue(obj, "horizontalPatrol");
-                            bool horizontalPatrol = (horizontalVal == "true" || horizontalVal == "1");
-                            levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol));
+                            bool horizontalPatrol = parseBool(horizontalVal, true);
+                            EnemyStats stats = EnemyPresets::FlyingBasic();
+                            std::string maxHpVal = extractValue(obj, "maxHP");
+                            if (!maxHpVal.empty()) stats.maxHP = static_cast<int>(parseFloat(maxHpVal));
+                            std::string sizeXVal = extractValue(obj, "sizeX");
+                            if (!sizeXVal.empty()) stats.sizeX = parseFloat(sizeXVal);
+                            std::string sizeYVal = extractValue(obj, "sizeY");
+                            if (!sizeYVal.empty()) stats.sizeY = parseFloat(sizeYVal);
+                            std::string speedVal = extractValue(obj, "speed");
+                            if (!speedVal.empty()) stats.speed = parseFloat(speedVal);
+                            std::string damageVal = extractValue(obj, "damage");
+                            if (!damageVal.empty()) stats.damage = static_cast<int>(parseFloat(damageVal));
+                            stats.canShoot = parseBool(extractValue(obj, "canShoot"), stats.canShoot);
+                            if (stats.canShoot) {
+                                std::string cooldownVal = extractValue(obj, "shootCooldown");
+                                if (!cooldownVal.empty()) stats.shootCooldown = parseFloat(cooldownVal);
+                                std::string projSpeedVal = extractValue(obj, "projectileSpeed");
+                                if (!projSpeedVal.empty()) stats.projectileSpeed = parseFloat(projSpeedVal);
+                                std::string projRangeVal = extractValue(obj, "projectileRange");
+                                if (!projRangeVal.empty()) stats.projectileRange = parseFloat(projRangeVal);
+                                std::string shootRangeVal = extractValue(obj, "shootRange");
+                                if (!shootRangeVal.empty()) stats.shootRange = parseFloat(shootRangeVal);
+                            }
+                            std::string colorRVal = extractValue(obj, "colorR");
+                            if (!colorRVal.empty()) stats.color.r = static_cast<sf::Uint8>(parseFloat(colorRVal));
+                            std::string colorGVal = extractValue(obj, "colorG");
+                            if (!colorGVal.empty()) stats.color.g = static_cast<sf::Uint8>(parseFloat(colorGVal));
+                            std::string colorBVal = extractValue(obj, "colorB");
+                            if (!colorBVal.empty()) stats.color.b = static_cast<sf::Uint8>(parseFloat(colorBVal));
+                            levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol, stats));
                         } else if (typeVal == "spike") {
                             levelData->enemies.push_back(std::make_unique<Spike>(x, y));
                         }

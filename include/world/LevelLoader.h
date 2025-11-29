@@ -46,6 +46,9 @@ public:
     LevelLoader() = default;
     ~LevelLoader() = default;
 
+    // Resolve level path (search source/assets locations)
+    static std::string resolveLevelPath(const std::string& filepath);
+
     // Load level from JSON file
     static std::unique_ptr<LevelData> loadFromFile(const std::string& filepath);
 
