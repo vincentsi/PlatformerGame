@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "entities/FlameTrap.h"
+
 class Camera;
 class Player;
 class Platform;
@@ -48,6 +50,8 @@ private:
         PatrolEnemy,
         FlyingEnemy,
         Spike,
+        FlameTrap,
+        RotatingTrap,
         Terminal,
         Door,
         Turret,
@@ -67,7 +71,11 @@ private:
         Boss,
         Fast,
         FlyingBasic,
-        FlyingShooter
+        FlyingShooter,
+        FlameHorizontal,
+        FlameVertical,
+        RotatingSlow,
+        RotatingFast
     };
     EnemyPresetType currentEnemyPreset = EnemyPresetType::Basic;
     
@@ -95,8 +103,21 @@ private:
     void reloadLevel(EditorContext& ctx);
     
     // Enemy preset helpers
-    struct EnemyStats getPresetStats(EnemyPresetType preset) const;
+    EnemyStats getPresetStats(EnemyPresetType preset) const;
     std::string getPresetName(EnemyPresetType preset) const;
     void applyPresetToEnemy(Enemy* enemy, EnemyPresetType preset, EditorContext& ctx);
+    void applyPresetDefaults(EnemyPresetType preset);
+
+    // Trap preset configuration
+    FlameDirection currentFlameDirection = FlameDirection::Right;
+    float currentFlameActive = 1.5f;
+    float currentFlameInactive = 1.5f;
+    float currentFlameInterval = 0.2f;
+    float currentFlameProjectileSpeed = 350.0f;
+    float currentFlameProjectileRange = 450.0f;
+
+    float currentRotatingSpeed = 120.0f;
+    float currentRotatingArmLength = 100.0f;
+    float currentRotatingArmThickness = 16.0f;
 };
 

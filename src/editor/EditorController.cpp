@@ -2,6 +2,8 @@
 #include "entities/Enemy.h"
 #include "entities/FlyingEnemy.h"
 #include "entities/PatrolEnemy.h"
+#include "entities/FlameTrap.h"
+#include "entities/RotatingTrap.h"
 #include "entities/EnemyStatsPresets.h"
 #include "entities/Player.h"
 #include "entities/Spike.h"
@@ -76,6 +78,14 @@ void EditorController::changeObjectType(ObjectType type) {
     selectedInteractiveIndex = -1;
     selectedCheckpointIndex = -1;
     selectedPortalIndex = -1;
+
+    if (type == ObjectType::FlameTrap) {
+        currentEnemyPreset = EnemyPresetType::FlameHorizontal;
+        applyPresetDefaults(currentEnemyPreset);
+    } else if (type == ObjectType::RotatingTrap) {
+        currentEnemyPreset = EnemyPresetType::RotatingSlow;
+        applyPresetDefaults(currentEnemyPreset);
+    }
 }
 
 sf::Vector2f EditorController::screenToWorld(const sf::Vector2f& screenPos, EditorContext& ctx) const {
@@ -275,7 +285,9 @@ void EditorController::handleEvent(const sf::Event& event, EditorContext& ctx) {
                 }
                 case ObjectType::PatrolEnemy:
                 case ObjectType::FlyingEnemy:
-                case ObjectType::Spike: {
+                case ObjectType::Spike:
+                case ObjectType::FlameTrap:
+                case ObjectType::RotatingTrap: {
                     for (size_t i = 0; i < ctx.enemies.size(); ++i) {
                         sf::FloatRect bounds = ctx.enemies[i]->getBounds();
                         if (bounds.contains(worldPos)) {
@@ -322,6 +334,27 @@ void EditorController::handleEvent(const sf::Event& event, EditorContext& ctx) {
                             case ObjectType::Spike:
                                 ctx.enemies.push_back(std::make_unique<Spike>(worldPos.x, worldPos.y));
                                 break;
+                            case ObjectType::FlameTrap: {
+                                EnemyStats stats = getPresetStats(currentEnemyPreset);
+                                auto flame = std::make_unique<FlameTrap>(worldPos.x, worldPos.y, stats);
+                                flame->setDirection(currentFlameDirection);
+                                flame->setActiveDuration(currentFlameActive);
+                                flame->setInactiveDuration(currentFlameInactive);
+                                flame->setShotInterval(currentFlameInterval);
+                                flame->setProjectileSpeed(currentFlameProjectileSpeed);
+                                flame->setProjectileRange(currentFlameProjectileRange);
+                                ctx.enemies.push_back(std::move(flame));
+                                break;
+                            }
+                            case ObjectType::RotatingTrap: {
+                                EnemyStats stats = getPresetStats(currentEnemyPreset);
+                                auto trap = std::make_unique<RotatingTrap>(worldPos.x, worldPos.y, stats);
+                                trap->setRotationSpeed(currentRotatingSpeed);
+                                trap->setArmLength(currentRotatingArmLength);
+                                trap->setArmThickness(currentRotatingArmThickness);
+                                ctx.enemies.push_back(std::move(trap));
+                                break;
+                            }
                             default:
                                 break;
                         }
@@ -431,12 +464,16 @@ void EditorController::handleEvent(const sf::Event& event, EditorContext& ctx) {
             case sf::Keyboard::Num1: changeObjectType(ObjectType::Platform); break;
             case sf::Keyboard::Num2: changeObjectType(ObjectType::PatrolEnemy); break;
             case sf::Keyboard::Num3: changeObjectType(ObjectType::FlyingEnemy); break;
+            case sf::Keyboard::Num0: changeObjectType(ObjectType::FlameTrap); break;
+            case sf::Keyboard::Dash: changeObjectType(ObjectType::RotatingTrap); break;
+            case sf::Keyboard::F: changeObjectType(ObjectType::FlameTrap); break;
+            case sf::Keyboard::R: changeObjectType(ObjectType::RotatingTrap); break;
             
             // Change enemy preset with P key
             case sf::Keyboard::P: {
                 if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(ctx.enemies.size())) {
                     // Cycle through presets for selected enemy
-                    int presetCount = 9; // Total number of presets
+                    int presetCount = static_cast<int>(EnemyPresetType::RotatingFast) + 1;
                     int currentPresetInt = static_cast<int>(currentEnemyPreset);
                     currentPresetInt = (currentPresetInt + 1) % presetCount;
                     currentEnemyPreset = static_cast<EnemyPresetType>(currentPresetInt);
@@ -448,10 +485,11 @@ void EditorController::handleEvent(const sf::Event& event, EditorContext& ctx) {
                     }
                 } else {
                     // Cycle preset for future enemies
-                    int presetCount = 9;
+                    int presetCount = static_cast<int>(EnemyPresetType::RotatingFast) + 1;
                     int currentPresetInt = static_cast<int>(currentEnemyPreset);
                     currentPresetInt = (currentPresetInt + 1) % presetCount;
                     currentEnemyPreset = static_cast<EnemyPresetType>(currentPresetInt);
+                    applyPresetDefaults(currentEnemyPreset);
                 }
                 break;
             }
@@ -462,6 +500,86 @@ void EditorController::handleEvent(const sf::Event& event, EditorContext& ctx) {
             case sf::Keyboard::Num8: changeObjectType(ObjectType::Checkpoint); break;
             case sf::Keyboard::Num9: changeObjectType(ObjectType::Portal); break;
             default: break;
+        }
+
+        if (event.key.code == sf::Keyboard::Y) {
+            auto advanceDirection = [](FlameDirection dir) {
+                switch (dir) {
+                    case FlameDirection::Left: return FlameDirection::Right;
+                    case FlameDirection::Right: return FlameDirection::Up;
+                    case FlameDirection::Up: return FlameDirection::Down;
+                    case FlameDirection::Down: return FlameDirection::Left;
+                }
+                return FlameDirection::Right;
+            };
+
+            if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(ctx.enemies.size())) {
+                if (auto* flame = dynamic_cast<FlameTrap*>(ctx.enemies[selectedEnemyIndex].get())) {
+                    flame->cycleDirection();
+                    currentFlameDirection = flame->getDirection();
+                }
+            } else {
+                currentFlameDirection = advanceDirection(currentFlameDirection);
+            }
+        } else if (event.key.code == sf::Keyboard::U) {
+            if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(ctx.enemies.size())) {
+                if (auto* rotating = dynamic_cast<RotatingTrap*>(ctx.enemies[selectedEnemyIndex].get())) {
+                    rotating->toggleDirection();
+                    currentRotatingSpeed = rotating->getRotationSpeed();
+                }
+            } else {
+                currentRotatingSpeed = -currentRotatingSpeed;
+            }
+        } else if (event.key.code == sf::Keyboard::I) {
+            auto adjustSpeed = [](float speed, float delta) {
+                float magnitude = std::max(20.0f, std::abs(speed) + delta);
+                float sign = (speed >= 0.0f) ? 1.0f : -1.0f;
+                return sign * magnitude;
+            };
+            if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(ctx.enemies.size())) {
+                if (auto* rotating = dynamic_cast<RotatingTrap*>(ctx.enemies[selectedEnemyIndex].get())) {
+                    float newSpeed = adjustSpeed(rotating->getRotationSpeed(), 20.0f);
+                    rotating->setRotationSpeed(newSpeed);
+                    currentRotatingSpeed = newSpeed;
+                }
+            } else {
+                currentRotatingSpeed = adjustSpeed(currentRotatingSpeed, 20.0f);
+            }
+        } else if (event.key.code == sf::Keyboard::K) {
+            auto adjustSpeed = [](float speed, float delta) {
+                float sign = (speed >= 0.0f) ? 1.0f : -1.0f;
+                float magnitude = std::max(20.0f, std::abs(speed) - delta);
+                return sign * magnitude;
+            };
+            if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(ctx.enemies.size())) {
+                if (auto* rotating = dynamic_cast<RotatingTrap*>(ctx.enemies[selectedEnemyIndex].get())) {
+                    float newSpeed = adjustSpeed(rotating->getRotationSpeed(), 20.0f);
+                    rotating->setRotationSpeed(newSpeed);
+                    currentRotatingSpeed = newSpeed;
+                }
+            } else {
+                currentRotatingSpeed = adjustSpeed(currentRotatingSpeed, 20.0f);
+            }
+        } else if (event.key.code == sf::Keyboard::L) {
+            if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(ctx.enemies.size())) {
+                if (auto* rotating = dynamic_cast<RotatingTrap*>(ctx.enemies[selectedEnemyIndex].get())) {
+                    float newLength = rotating->getArmLength() + 10.0f;
+                    rotating->setArmLength(newLength);
+                    currentRotatingArmLength = newLength;
+                }
+            } else {
+                currentRotatingArmLength += 10.0f;
+            }
+        } else if (event.key.code == sf::Keyboard::J) {
+            if (selectedEnemyIndex >= 0 && selectedEnemyIndex < static_cast<int>(ctx.enemies.size())) {
+                if (auto* rotating = dynamic_cast<RotatingTrap*>(ctx.enemies[selectedEnemyIndex].get())) {
+                    float newLength = std::max(40.0f, rotating->getArmLength() - 10.0f);
+                    rotating->setArmLength(newLength);
+                    currentRotatingArmLength = newLength;
+                }
+            } else {
+                currentRotatingArmLength = std::max(40.0f, currentRotatingArmLength - 10.0f);
+            }
         }
     }
 
@@ -849,6 +967,8 @@ void EditorController::render(EditorContext& ctx) {
                     case ObjectType::PatrolEnemy: return "PatrolEnemy";
                     case ObjectType::FlyingEnemy: return "FlyingEnemy";
                     case ObjectType::Spike: return "Spike";
+                    case ObjectType::FlameTrap: return "FlameTrap";
+                    case ObjectType::RotatingTrap: return "RotatingTrap";
                     case ObjectType::Terminal: return "Terminal";
                     case ObjectType::Door: return "Door";
                     case ObjectType::Turret: return "Turret";
@@ -858,8 +978,8 @@ void EditorController::render(EditorContext& ctx) {
                 return "Platform";
             }() +
             ")\n"
-            "  1=Platform 2=Patrol 3=Flying 4=Spike\n"
-            "  5=Terminal 6=Door 7=Turret 8=Checkpoint 9=Portal\n"
+            "  1=Platform 2=Patrol 3=Flying 4=Spike 0=Flame - =Rotating\n"
+            "  5=Terminal 6=Door 7=Turret 8=Checkpoint 9=Portal (F=Flame R=Rotating)\n"
             "Clic Gauche: Placer/Selectionner\n"
             "Clic Droit: Supprimer\n"
             "Delete: Supprimer selectionnee\n"
@@ -869,6 +989,8 @@ void EditorController::render(EditorContext& ctx) {
             "+/-: Largeur plateforme\n"
             "PageUp/Down: Hauteur plateforme\n"
             "T: Changer type plateforme / direction spawn portail\n"
+            "Y: Direction flamme  U: Inverser rotation\n"
+            "I/K: Ajuster vitesse rotation  J/L: Longueur bras\n"
             "P: Changer preset ennemi (" + getPresetName(currentEnemyPreset) + ")\n"
             "Plateformes: " + std::to_string(ctx.platforms.size()) + "\n"
             "Ennemis: " + std::to_string(ctx.enemies.size()) + "\n"
@@ -878,8 +1000,6 @@ void EditorController::render(EditorContext& ctx) {
             Enemy* enemy = ctx.enemies[selectedEnemyIndex].get();
             if (enemy->getType() == EnemyType::Patrol || enemy->getType() == EnemyType::Flying) {
                 editorText.setString(editorText.getString() + "\nQ/W: Distance patrouille (" + std::to_string(static_cast<int>(enemy->getPatrolDistance())) + ")");
-                
-                // Show enemy stats
                 editorText.setString(editorText.getString() + "\nP: Changer preset (actuel: " + getPresetName(currentEnemyPreset) + ")");
                 editorText.setString(editorText.getString() + "\nHP: " + std::to_string(enemy->getHP()) + "/" + std::to_string(enemy->getMaxHP()));
                 editorText.setString(editorText.getString() + "\nVitesse: " + std::to_string(static_cast<int>(enemy->getStats().speed)));
@@ -889,6 +1009,33 @@ void EditorController::render(EditorContext& ctx) {
                 } else {
                     editorText.setString(editorText.getString() + "\nTire: Non");
                 }
+            } else if (enemy->getType() == EnemyType::FlameTrap) {
+                if (auto* flame = dynamic_cast<FlameTrap*>(enemy)) {
+                    auto directionToString = [](FlameDirection dir) {
+                        switch (dir) {
+                            case FlameDirection::Left:  return "Left";
+                            case FlameDirection::Right: return "Right";
+                            case FlameDirection::Up:    return "Up";
+                            case FlameDirection::Down:  return "Down";
+                        }
+                        return "Right";
+                    };
+                    editorText.setString(editorText.getString() + "\nFlameTrap\nP: Changer preset (" + getPresetName(currentEnemyPreset) + ")");
+                    editorText.setString(editorText.getString() + "\nDirection: " + std::string(directionToString(flame->getDirection())));
+                    editorText.setString(editorText.getString() + "\nActive: " + std::to_string(static_cast<int>(flame->getActiveDuration() * 1000)) + " ms");
+                    editorText.setString(editorText.getString() + "\nRepos: " + std::to_string(static_cast<int>(flame->getInactiveDuration() * 1000)) + " ms");
+                    editorText.setString(editorText.getString() + "\nInterval tir: " + std::to_string(static_cast<int>(flame->getShotInterval() * 1000)) + " ms");
+                    editorText.setString(editorText.getString() + "\nProjectiles: " + std::to_string(static_cast<int>(flame->getProjectileSpeed())) + " px/s sur " + std::to_string(static_cast<int>(flame->getProjectileRange())) + " px");
+                }
+            } else if (enemy->getType() == EnemyType::RotatingTrap) {
+                if (auto* rotating = dynamic_cast<RotatingTrap*>(enemy)) {
+                    editorText.setString(editorText.getString() + "\nRotatingTrap\nP: Changer preset (" + getPresetName(currentEnemyPreset) + ")");
+                    editorText.setString(editorText.getString() + "\nVitesse: " + std::to_string(static_cast<int>(rotating->getRotationSpeed())) + " deg/s");
+                    editorText.setString(editorText.getString() + "\nLongueur bras: " + std::to_string(static_cast<int>(rotating->getArmLength())) + " px");
+                    editorText.setString(editorText.getString() + "\nEpaisseur: " + std::to_string(static_cast<int>(rotating->getArmThickness())) + " px");
+                }
+            } else if (enemy->getType() == EnemyType::Stationary) {
+                editorText.setString(editorText.getString() + "\nSpike (statique)\nP: Preset non disponible");
             }
         }
 
@@ -1022,16 +1169,24 @@ void EditorController::saveLevel(EditorContext& ctx) {
     }
 
     j["enemies"] = nlohmann::json::array();
+    auto flameDirToString = [](FlameDirection dir) {
+        switch (dir) {
+            case FlameDirection::Left:  return std::string("left");
+            case FlameDirection::Right: return std::string("right");
+            case FlameDirection::Up:    return std::string("up");
+            case FlameDirection::Down:  return std::string("down");
+        }
+        return std::string("right");
+    };
     for (const auto& enemy : ctx.enemies) {
         if (!enemy) continue; // Skip null enemies
         sf::Vector2f pos = enemy->getPosition();
         nlohmann::json e;
         e["x"] = pos.x;
         e["y"] = pos.y;
-        if (dynamic_cast<PatrolEnemy*>(enemy.get())) {
+        if (auto* patrol = dynamic_cast<PatrolEnemy*>(enemy.get())) {
             e["type"] = "patrol";
-            e["patrolDistance"] = enemy->getPatrolDistance();
-            // Save enemy stats
+            e["patrolDistance"] = patrol->getPatrolDistance();
             const EnemyStats& stats = enemy->getStats();
             e["maxHP"] = stats.maxHP;
             e["sizeX"] = stats.sizeX;
@@ -1039,7 +1194,6 @@ void EditorController::saveLevel(EditorContext& ctx) {
             e["speed"] = stats.speed;
             e["damage"] = stats.damage;
             e["canShoot"] = stats.canShoot;
-            // Save color
             e["colorR"] = stats.color.r;
             e["colorG"] = stats.color.g;
             e["colorB"] = stats.color.b;
@@ -1049,11 +1203,10 @@ void EditorController::saveLevel(EditorContext& ctx) {
                 e["projectileRange"] = stats.projectileRange;
                 e["shootRange"] = stats.shootRange;
             }
-        } else if (dynamic_cast<FlyingEnemy*>(enemy.get())) {
+        } else if (auto* flying = dynamic_cast<FlyingEnemy*>(enemy.get())) {
             e["type"] = "flying";
-            e["patrolDistance"] = enemy->getPatrolDistance();
+            e["patrolDistance"] = flying->getPatrolDistance();
             e["horizontalPatrol"] = true;
-            // Save enemy stats
             const EnemyStats& stats = enemy->getStats();
             e["maxHP"] = stats.maxHP;
             e["sizeX"] = stats.sizeX;
@@ -1061,7 +1214,6 @@ void EditorController::saveLevel(EditorContext& ctx) {
             e["speed"] = stats.speed;
             e["damage"] = stats.damage;
             e["canShoot"] = stats.canShoot;
-            // Save color
             e["colorR"] = stats.color.r;
             e["colorG"] = stats.color.g;
             e["colorB"] = stats.color.b;
@@ -1073,6 +1225,35 @@ void EditorController::saveLevel(EditorContext& ctx) {
             }
         } else if (dynamic_cast<Spike*>(enemy.get())) {
             e["type"] = "spike";
+        } else if (auto* flame = dynamic_cast<FlameTrap*>(enemy.get())) {
+            e["type"] = "flameTrap";
+            const EnemyStats& stats = enemy->getStats();
+            e["maxHP"] = stats.maxHP;
+            e["sizeX"] = stats.sizeX;
+            e["sizeY"] = stats.sizeY;
+            e["damage"] = stats.damage;
+            e["colorR"] = stats.color.r;
+            e["colorG"] = stats.color.g;
+            e["colorB"] = stats.color.b;
+            e["direction"] = flameDirToString(flame->getDirection());
+            e["activeDuration"] = flame->getActiveDuration();
+            e["inactiveDuration"] = flame->getInactiveDuration();
+            e["shotInterval"] = flame->getShotInterval();
+            e["projectileSpeed"] = flame->getProjectileSpeed();
+            e["projectileRange"] = flame->getProjectileRange();
+        } else if (auto* rotating = dynamic_cast<RotatingTrap*>(enemy.get())) {
+            e["type"] = "rotatingTrap";
+            const EnemyStats& stats = enemy->getStats();
+            e["maxHP"] = stats.maxHP;
+            e["sizeX"] = stats.sizeX;
+            e["sizeY"] = stats.sizeY;
+            e["damage"] = stats.damage;
+            e["colorR"] = stats.color.r;
+            e["colorG"] = stats.color.g;
+            e["colorB"] = stats.color.b;
+            e["rotationSpeed"] = rotating->getRotationSpeed();
+            e["armLength"] = rotating->getArmLength();
+            e["armThickness"] = rotating->getArmThickness();
         }
         j["enemies"].push_back(e);
     }
@@ -1211,6 +1392,15 @@ fallback_save:
 
     std::stringstream enemiesStream;
     enemiesStream << "[\n";
+    auto flameDirToStringFallback = [](FlameDirection dir) {
+        switch (dir) {
+            case FlameDirection::Left:  return "left";
+            case FlameDirection::Right: return "right";
+            case FlameDirection::Up:    return "up";
+            case FlameDirection::Down:  return "down";
+        }
+        return "right";
+    };
     for (size_t i = 0; i < ctx.enemies.size(); ++i) {
         Enemy* enemy = ctx.enemies[i].get();
         if (!enemy) continue; // Skip null enemies
@@ -1218,8 +1408,8 @@ fallback_save:
         const EnemyStats& stats = enemy->getStats();
         enemiesStream << "    { \"x\": " << static_cast<int>(pos.x)
                       << ", \"y\": " << static_cast<int>(pos.y);
-        if (dynamic_cast<PatrolEnemy*>(enemy)) {
-            enemiesStream << ", \"type\": \"patrol\", \"patrolDistance\": " << static_cast<int>(enemy->getPatrolDistance())
+        if (auto* patrol = dynamic_cast<PatrolEnemy*>(enemy)) {
+            enemiesStream << ", \"type\": \"patrol\", \"patrolDistance\": " << static_cast<int>(patrol->getPatrolDistance())
                           << ", \"maxHP\": " << stats.maxHP
                           << ", \"sizeX\": " << static_cast<int>(stats.sizeX)
                           << ", \"sizeY\": " << static_cast<int>(stats.sizeY)
@@ -1235,8 +1425,8 @@ fallback_save:
                               << ", \"projectileRange\": " << static_cast<int>(stats.projectileRange)
                               << ", \"shootRange\": " << static_cast<int>(stats.shootRange);
             }
-        } else if (dynamic_cast<FlyingEnemy*>(enemy)) {
-            enemiesStream << ", \"type\": \"flying\", \"patrolDistance\": " << static_cast<int>(enemy->getPatrolDistance()) << ", \"horizontalPatrol\": true"
+        } else if (auto* flying = dynamic_cast<FlyingEnemy*>(enemy)) {
+            enemiesStream << ", \"type\": \"flying\", \"patrolDistance\": " << static_cast<int>(flying->getPatrolDistance()) << ", \"horizontalPatrol\": true"
                           << ", \"maxHP\": " << stats.maxHP
                           << ", \"sizeX\": " << static_cast<int>(stats.sizeX)
                           << ", \"sizeY\": " << static_cast<int>(stats.sizeY)
@@ -1254,6 +1444,33 @@ fallback_save:
             }
         } else if (dynamic_cast<Spike*>(enemy)) {
             enemiesStream << ", \"type\": \"spike\"";
+        } else if (auto* flame = dynamic_cast<FlameTrap*>(enemy)) {
+            enemiesStream << ", \"type\": \"flameTrap\""
+                          << ", \"maxHP\": " << stats.maxHP
+                          << ", \"sizeX\": " << static_cast<int>(stats.sizeX)
+                          << ", \"sizeY\": " << static_cast<int>(stats.sizeY)
+                          << ", \"damage\": " << stats.damage
+                          << ", \"colorR\": " << static_cast<int>(stats.color.r)
+                          << ", \"colorG\": " << static_cast<int>(stats.color.g)
+                          << ", \"colorB\": " << static_cast<int>(stats.color.b)
+                          << ", \"direction\": \"" << flameDirToStringFallback(flame->getDirection()) << "\""
+                          << ", \"activeDuration\": " << flame->getActiveDuration()
+                          << ", \"inactiveDuration\": " << flame->getInactiveDuration()
+                          << ", \"shotInterval\": " << flame->getShotInterval()
+                          << ", \"projectileSpeed\": " << static_cast<int>(flame->getProjectileSpeed())
+                          << ", \"projectileRange\": " << static_cast<int>(flame->getProjectileRange());
+        } else if (auto* rotating = dynamic_cast<RotatingTrap*>(enemy)) {
+            enemiesStream << ", \"type\": \"rotatingTrap\""
+                          << ", \"maxHP\": " << stats.maxHP
+                          << ", \"sizeX\": " << static_cast<int>(stats.sizeX)
+                          << ", \"sizeY\": " << static_cast<int>(stats.sizeY)
+                          << ", \"damage\": " << stats.damage
+                          << ", \"colorR\": " << static_cast<int>(stats.color.r)
+                          << ", \"colorG\": " << static_cast<int>(stats.color.g)
+                          << ", \"colorB\": " << static_cast<int>(stats.color.b)
+                          << ", \"rotationSpeed\": " << static_cast<int>(rotating->getRotationSpeed())
+                          << ", \"armLength\": " << static_cast<int>(rotating->getArmLength())
+                          << ", \"armThickness\": " << static_cast<int>(rotating->getArmThickness());
         }
         enemiesStream << " }";
         if (i < ctx.enemies.size() - 1) enemiesStream << ",";
@@ -1364,6 +1581,14 @@ EnemyStats EditorController::getPresetStats(EnemyPresetType preset) const {
             return EnemyPresets::FlyingBasic();
         case EnemyPresetType::FlyingShooter:
             return EnemyPresets::FlyingShooter();
+        case EnemyPresetType::FlameHorizontal:
+            return EnemyPresets::FlameHorizontal();
+        case EnemyPresetType::FlameVertical:
+            return EnemyPresets::FlameVertical();
+        case EnemyPresetType::RotatingSlow:
+            return EnemyPresets::RotatingSlow();
+        case EnemyPresetType::RotatingFast:
+            return EnemyPresets::RotatingFast();
         default:
             return EnemyPresets::Basic();
     }
@@ -1389,6 +1614,14 @@ std::string EditorController::getPresetName(EnemyPresetType preset) const {
             return "FlyingBasic";
         case EnemyPresetType::FlyingShooter:
             return "FlyingShooter";
+        case EnemyPresetType::FlameHorizontal:
+            return "FlameHorizontal";
+        case EnemyPresetType::FlameVertical:
+            return "FlameVertical";
+        case EnemyPresetType::RotatingSlow:
+            return "RotatingSlow";
+        case EnemyPresetType::RotatingFast:
+            return "RotatingFast";
         default:
             return "Basic";
     }
@@ -1399,6 +1632,7 @@ void EditorController::applyPresetToEnemy(Enemy* enemy, EnemyPresetType preset, 
         return;
     }
     
+    applyPresetDefaults(preset);
     EnemyStats newStats = getPresetStats(preset);
     
     // Get current enemy properties
@@ -1439,6 +1673,27 @@ void EditorController::applyPresetToEnemy(Enemy* enemy, EnemyPresetType preset, 
         newEnemy = std::make_unique<PatrolEnemy>(pos.x, pos.y, patrolDistance, newStats);
     } else if (enemyType == EnemyType::Flying) {
         newEnemy = std::make_unique<FlyingEnemy>(pos.x, pos.y, patrolDistance, isHorizontal, newStats);
+    } else if (enemyType == EnemyType::FlameTrap) {
+        if (preset != EnemyPresetType::FlameHorizontal && preset != EnemyPresetType::FlameVertical) {
+            newStats = EnemyPresets::FlameHorizontal();
+        }
+        auto flame = std::make_unique<FlameTrap>(pos.x, pos.y, newStats);
+        flame->setDirection(currentFlameDirection);
+        flame->setActiveDuration(currentFlameActive);
+        flame->setInactiveDuration(currentFlameInactive);
+        flame->setShotInterval(currentFlameInterval);
+        flame->setProjectileSpeed(currentFlameProjectileSpeed);
+        flame->setProjectileRange(currentFlameProjectileRange);
+        newEnemy = std::move(flame);
+    } else if (enemyType == EnemyType::RotatingTrap) {
+        if (preset != EnemyPresetType::RotatingSlow && preset != EnemyPresetType::RotatingFast) {
+            newStats = EnemyPresets::RotatingSlow();
+        }
+        auto trap = std::make_unique<RotatingTrap>(pos.x, pos.y, newStats);
+        trap->setRotationSpeed(currentRotatingSpeed);
+        trap->setArmLength(currentRotatingArmLength);
+        trap->setArmThickness(currentRotatingArmThickness);
+        newEnemy = std::move(trap);
     } else {
         // For Stationary (Spike), we can't change preset easily
         return;
@@ -1446,5 +1701,38 @@ void EditorController::applyPresetToEnemy(Enemy* enemy, EnemyPresetType preset, 
     
     // Replace the enemy
     ctx.enemies[selectedEnemyIndex] = std::move(newEnemy);
+}
+
+void EditorController::applyPresetDefaults(EnemyPresetType preset) {
+    switch (preset) {
+        case EnemyPresetType::FlameHorizontal:
+            currentFlameDirection = FlameDirection::Right;
+            currentFlameActive = 1.5f;
+            currentFlameInactive = 1.5f;
+            currentFlameInterval = 0.2f;
+            currentFlameProjectileSpeed = 350.0f;
+            currentFlameProjectileRange = 450.0f;
+            break;
+        case EnemyPresetType::FlameVertical:
+            currentFlameDirection = FlameDirection::Up;
+            currentFlameActive = 1.5f;
+            currentFlameInactive = 1.5f;
+            currentFlameInterval = 0.2f;
+            currentFlameProjectileSpeed = 350.0f;
+            currentFlameProjectileRange = 450.0f;
+            break;
+        case EnemyPresetType::RotatingSlow:
+            currentRotatingSpeed = 100.0f;
+            currentRotatingArmLength = 110.0f;
+            currentRotatingArmThickness = 18.0f;
+            break;
+        case EnemyPresetType::RotatingFast:
+            currentRotatingSpeed = 180.0f;
+            currentRotatingArmLength = 130.0f;
+            currentRotatingArmThickness = 20.0f;
+            break;
+        default:
+            break;
+    }
 }
 

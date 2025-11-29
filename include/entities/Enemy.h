@@ -6,7 +6,9 @@
 enum class EnemyType {
     Patrol,
     Stationary,
-    Flying
+    Flying,
+    FlameTrap,
+    RotatingTrap
 };
 
 // Structure pour définir les stats d'un ennemi

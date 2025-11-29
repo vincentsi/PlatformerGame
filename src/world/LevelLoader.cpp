@@ -2,6 +2,8 @@
 #include "entities/PatrolEnemy.h"
 #include "entities/FlyingEnemy.h"
 #include "entities/Spike.h"
+#include "entities/FlameTrap.h"
+#include "entities/RotatingTrap.h"
 #include "entities/EnemyStatsPresets.h"
 #include <fstream>
 #include <sstream>
@@ -245,6 +247,14 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
 
         // Enemies
         if (j.contains("enemies") && j["enemies"].is_array()) {
+            auto parseDirection = [](const std::string& dir) {
+                std::string lower = dir;
+                std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                if (lower == "left") return FlameDirection::Left;
+                if (lower == "up") return FlameDirection::Up;
+                if (lower == "down") return FlameDirection::Down;
+                return FlameDirection::Right;
+            };
             for (const auto& e : j["enemies"]) {
                 if (!e.is_object()) continue;
                 float x = e.value("x", 0.0f);
@@ -294,6 +304,38 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
                     levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol, stats));
                 } else if (typeStr == "spike") {
                     levelData->enemies.push_back(std::make_unique<Spike>(x, y));
+                } else if (typeStr == "flameTrap") {
+                    EnemyStats stats = EnemyPresets::FlameHorizontal();
+                    stats.maxHP = e.value("maxHP", stats.maxHP);
+                    stats.sizeX = e.value("sizeX", stats.sizeX);
+                    stats.sizeY = e.value("sizeY", stats.sizeY);
+                    stats.damage = e.value("damage", stats.damage);
+                    stats.color.r = static_cast<sf::Uint8>(e.value("colorR", static_cast<int>(stats.color.r)));
+                    stats.color.g = static_cast<sf::Uint8>(e.value("colorG", static_cast<int>(stats.color.g)));
+                    stats.color.b = static_cast<sf::Uint8>(e.value("colorB", static_cast<int>(stats.color.b)));
+                    auto flame = std::make_unique<FlameTrap>(x, y, stats);
+                    std::string dirStr = e.value("direction", std::string("right"));
+                    flame->setDirection(parseDirection(dirStr));
+                    flame->setActiveDuration(e.value("activeDuration", 1.5f));
+                    flame->setInactiveDuration(e.value("inactiveDuration", 1.5f));
+                    flame->setShotInterval(e.value("shotInterval", 0.2f));
+                    flame->setProjectileSpeed(e.value("projectileSpeed", 350.0f));
+                    flame->setProjectileRange(e.value("projectileRange", 450.0f));
+                    levelData->enemies.push_back(std::move(flame));
+                } else if (typeStr == "rotatingTrap") {
+                    EnemyStats stats = EnemyPresets::RotatingSlow();
+                    stats.maxHP = e.value("maxHP", stats.maxHP);
+                    stats.sizeX = e.value("sizeX", stats.sizeX);
+                    stats.sizeY = e.value("sizeY", stats.sizeY);
+                    stats.damage = e.value("damage", stats.damage);
+                    stats.color.r = static_cast<sf::Uint8>(e.value("colorR", static_cast<int>(stats.color.r)));
+                    stats.color.g = static_cast<sf::Uint8>(e.value("colorG", static_cast<int>(stats.color.g)));
+                    stats.color.b = static_cast<sf::Uint8>(e.value("colorB", static_cast<int>(stats.color.b)));
+                    auto trap = std::make_unique<RotatingTrap>(x, y, stats);
+                    trap->setRotationSpeed(e.value("rotationSpeed", 120.0f));
+                    trap->setArmLength(e.value("armLength", stats.sizeX));
+                    trap->setArmThickness(e.value("armThickness", stats.sizeY));
+                    levelData->enemies.push_back(std::move(trap));
                 }
             }
         }
@@ -566,112 +608,177 @@ std::unique_ptr<LevelData> LevelLoader::loadFromFile(const std::string& filepath
             int bracketDepth = 1;
             size_t enemiesEnd = arrayStart + 1;
             while (enemiesEnd < content.length() && bracketDepth > 0) {
-                if (content[enemiesEnd] == '[') bracketDepth++;
-                else if (content[enemiesEnd] == ']') bracketDepth--;
-                if (bracketDepth > 0) enemiesEnd++;
+                char c = content[enemiesEnd];
+                if (c == '[') bracketDepth++;
+                else if (c == ']') bracketDepth--;
+                enemiesEnd++;
             }
-            
-            if (enemiesEnd < content.length() && bracketDepth == 0) {
+
+            if (bracketDepth == 0) {
                 std::string enemiesSection = content.substr(arrayStart, enemiesEnd - arrayStart);
-                
                 size_t pos = 0;
+                auto parseBool = [](const std::string& val, bool defaultValue) {
+                    if (val.empty()) return defaultValue;
+                    std::string lower = val;
+                    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                    if (lower == "true" || lower == "1") return true;
+                    if (lower == "false" || lower == "0") return false;
+                    return defaultValue;
+                };
+
+                auto parseDirection = [](const std::string& dir) {
+                    std::string lower = dir;
+                    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                    if (lower == "left") return FlameDirection::Left;
+                    if (lower == "up") return FlameDirection::Up;
+                    if (lower == "down") return FlameDirection::Down;
+                    return FlameDirection::Right;
+                };
+
                 while ((pos = enemiesSection.find("{", pos)) != std::string::npos) {
                     size_t objEnd = enemiesSection.find("}", pos);
                     if (objEnd == std::string::npos) break;
-                    
+
                     std::string obj = enemiesSection.substr(pos, objEnd - pos + 1);
-                    
+                    pos = objEnd + 1;
+
                     std::string typeVal = extractValue(obj, "type");
                     std::string xVal = extractValue(obj, "x");
                     std::string yVal = extractValue(obj, "y");
-                    
-                    if (!typeVal.empty() && !xVal.empty() && !yVal.empty()) {
-                        float x = parseFloat(xVal);
-                        float y = parseFloat(yVal);
-                        
-                        auto parseBool = [](const std::string& val, bool defaultValue) {
-                            if (val.empty()) return defaultValue;
-                            std::string lower = val;
-                            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-                            if (lower == "true" || lower == "1") return true;
-                            if (lower == "false" || lower == "0") return false;
-                            return defaultValue;
-                        };
-
-                        if (typeVal == "patrol") {
-                            std::string patrolDistVal = extractValue(obj, "patrolDistance");
-                            float patrolDistance = patrolDistVal.empty() ? 100.0f : parseFloat(patrolDistVal);
-                            EnemyStats stats = EnemyPresets::Basic();
-                            std::string maxHpVal = extractValue(obj, "maxHP");
-                            if (!maxHpVal.empty()) stats.maxHP = static_cast<int>(parseFloat(maxHpVal));
-                            std::string sizeXVal = extractValue(obj, "sizeX");
-                            if (!sizeXVal.empty()) stats.sizeX = parseFloat(sizeXVal);
-                            std::string sizeYVal = extractValue(obj, "sizeY");
-                            if (!sizeYVal.empty()) stats.sizeY = parseFloat(sizeYVal);
-                            std::string speedVal = extractValue(obj, "speed");
-                            if (!speedVal.empty()) stats.speed = parseFloat(speedVal);
-                            std::string damageVal = extractValue(obj, "damage");
-                            if (!damageVal.empty()) stats.damage = static_cast<int>(parseFloat(damageVal));
-                            stats.canShoot = parseBool(extractValue(obj, "canShoot"), stats.canShoot);
-                            if (stats.canShoot) {
-                                std::string cooldownVal = extractValue(obj, "shootCooldown");
-                                if (!cooldownVal.empty()) stats.shootCooldown = parseFloat(cooldownVal);
-                                std::string projSpeedVal = extractValue(obj, "projectileSpeed");
-                                if (!projSpeedVal.empty()) stats.projectileSpeed = parseFloat(projSpeedVal);
-                                std::string projRangeVal = extractValue(obj, "projectileRange");
-                                if (!projRangeVal.empty()) stats.projectileRange = parseFloat(projRangeVal);
-                                std::string shootRangeVal = extractValue(obj, "shootRange");
-                                if (!shootRangeVal.empty()) stats.shootRange = parseFloat(shootRangeVal);
-                            }
-                            std::string colorRVal = extractValue(obj, "colorR");
-                            if (!colorRVal.empty()) stats.color.r = static_cast<sf::Uint8>(parseFloat(colorRVal));
-                            std::string colorGVal = extractValue(obj, "colorG");
-                            if (!colorGVal.empty()) stats.color.g = static_cast<sf::Uint8>(parseFloat(colorGVal));
-                            std::string colorBVal = extractValue(obj, "colorB");
-                            if (!colorBVal.empty()) stats.color.b = static_cast<sf::Uint8>(parseFloat(colorBVal));
-                            levelData->enemies.push_back(std::make_unique<PatrolEnemy>(x, y, patrolDistance, stats));
-                        } else if (typeVal == "flying") {
-                            std::string patrolDistVal = extractValue(obj, "patrolDistance");
-                            float patrolDistance = patrolDistVal.empty() ? 200.0f : parseFloat(patrolDistVal);
-                            std::string horizontalVal = extractValue(obj, "horizontalPatrol");
-                            bool horizontalPatrol = parseBool(horizontalVal, true);
-                            EnemyStats stats = EnemyPresets::FlyingBasic();
-                            std::string maxHpVal = extractValue(obj, "maxHP");
-                            if (!maxHpVal.empty()) stats.maxHP = static_cast<int>(parseFloat(maxHpVal));
-                            std::string sizeXVal = extractValue(obj, "sizeX");
-                            if (!sizeXVal.empty()) stats.sizeX = parseFloat(sizeXVal);
-                            std::string sizeYVal = extractValue(obj, "sizeY");
-                            if (!sizeYVal.empty()) stats.sizeY = parseFloat(sizeYVal);
-                            std::string speedVal = extractValue(obj, "speed");
-                            if (!speedVal.empty()) stats.speed = parseFloat(speedVal);
-                            std::string damageVal = extractValue(obj, "damage");
-                            if (!damageVal.empty()) stats.damage = static_cast<int>(parseFloat(damageVal));
-                            stats.canShoot = parseBool(extractValue(obj, "canShoot"), stats.canShoot);
-                            if (stats.canShoot) {
-                                std::string cooldownVal = extractValue(obj, "shootCooldown");
-                                if (!cooldownVal.empty()) stats.shootCooldown = parseFloat(cooldownVal);
-                                std::string projSpeedVal = extractValue(obj, "projectileSpeed");
-                                if (!projSpeedVal.empty()) stats.projectileSpeed = parseFloat(projSpeedVal);
-                                std::string projRangeVal = extractValue(obj, "projectileRange");
-                                if (!projRangeVal.empty()) stats.projectileRange = parseFloat(projRangeVal);
-                                std::string shootRangeVal = extractValue(obj, "shootRange");
-                                if (!shootRangeVal.empty()) stats.shootRange = parseFloat(shootRangeVal);
-                            }
-                            std::string colorRVal = extractValue(obj, "colorR");
-                            if (!colorRVal.empty()) stats.color.r = static_cast<sf::Uint8>(parseFloat(colorRVal));
-                            std::string colorGVal = extractValue(obj, "colorG");
-                            if (!colorGVal.empty()) stats.color.g = static_cast<sf::Uint8>(parseFloat(colorGVal));
-                            std::string colorBVal = extractValue(obj, "colorB");
-                            if (!colorBVal.empty()) stats.color.b = static_cast<sf::Uint8>(parseFloat(colorBVal));
-                            levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol, stats));
-                        } else if (typeVal == "spike") {
-                            levelData->enemies.push_back(std::make_unique<Spike>(x, y));
-                        }
+                    if (typeVal.empty() || xVal.empty() || yVal.empty()) {
+                        continue;
                     }
-                    
-                    pos = objEnd + 1;
+
+                    float x = parseFloat(xVal);
+                    float y = parseFloat(yVal);
+
+                    if (typeVal == "patrol") {
+                        std::string patrolDistVal = extractValue(obj, "patrolDistance");
+                        float patrolDistance = patrolDistVal.empty() ? 100.0f : parseFloat(patrolDistVal);
+                        EnemyStats stats = EnemyPresets::Basic();
+                        std::string maxHpVal = extractValue(obj, "maxHP");
+                        if (!maxHpVal.empty()) stats.maxHP = static_cast<int>(parseFloat(maxHpVal));
+                        std::string sizeXVal = extractValue(obj, "sizeX");
+                        if (!sizeXVal.empty()) stats.sizeX = parseFloat(sizeXVal);
+                        std::string sizeYVal = extractValue(obj, "sizeY");
+                        if (!sizeYVal.empty()) stats.sizeY = parseFloat(sizeYVal);
+                        std::string speedVal = extractValue(obj, "speed");
+                        if (!speedVal.empty()) stats.speed = parseFloat(speedVal);
+                        std::string damageVal = extractValue(obj, "damage");
+                        if (!damageVal.empty()) stats.damage = static_cast<int>(parseFloat(damageVal));
+                        stats.canShoot = parseBool(extractValue(obj, "canShoot"), stats.canShoot);
+                        if (stats.canShoot) {
+                            std::string cooldownVal = extractValue(obj, "shootCooldown");
+                            if (!cooldownVal.empty()) stats.shootCooldown = parseFloat(cooldownVal);
+                            std::string projSpeedVal = extractValue(obj, "projectileSpeed");
+                            if (!projSpeedVal.empty()) stats.projectileSpeed = parseFloat(projSpeedVal);
+                            std::string projRangeVal = extractValue(obj, "projectileRange");
+                            if (!projRangeVal.empty()) stats.projectileRange = parseFloat(projRangeVal);
+                            std::string shootRangeVal = extractValue(obj, "shootRange");
+                            if (!shootRangeVal.empty()) stats.shootRange = parseFloat(shootRangeVal);
+                        }
+                        std::string colorRVal = extractValue(obj, "colorR");
+                        if (!colorRVal.empty()) stats.color.r = static_cast<sf::Uint8>(parseFloat(colorRVal));
+                        std::string colorGVal = extractValue(obj, "colorG");
+                        if (!colorGVal.empty()) stats.color.g = static_cast<sf::Uint8>(parseFloat(colorGVal));
+                        std::string colorBVal = extractValue(obj, "colorB");
+                        if (!colorBVal.empty()) stats.color.b = static_cast<sf::Uint8>(parseFloat(colorBVal));
+                        levelData->enemies.push_back(std::make_unique<PatrolEnemy>(x, y, patrolDistance, stats));
+                    } else if (typeVal == "flying") {
+                        std::string patrolDistVal = extractValue(obj, "patrolDistance");
+                        float patrolDistance = patrolDistVal.empty() ? 200.0f : parseFloat(patrolDistVal);
+                        bool horizontalPatrol = parseBool(extractValue(obj, "horizontalPatrol"), true);
+                        EnemyStats stats = EnemyPresets::FlyingBasic();
+                        std::string maxHpVal = extractValue(obj, "maxHP");
+                        if (!maxHpVal.empty()) stats.maxHP = static_cast<int>(parseFloat(maxHpVal));
+                        std::string sizeXVal = extractValue(obj, "sizeX");
+                        if (!sizeXVal.empty()) stats.sizeX = parseFloat(sizeXVal);
+                        std::string sizeYVal = extractValue(obj, "sizeY");
+                        if (!sizeYVal.empty()) stats.sizeY = parseFloat(sizeYVal);
+                        std::string speedVal = extractValue(obj, "speed");
+                        if (!speedVal.empty()) stats.speed = parseFloat(speedVal);
+                        std::string damageVal = extractValue(obj, "damage");
+                        if (!damageVal.empty()) stats.damage = static_cast<int>(parseFloat(damageVal));
+                        stats.canShoot = parseBool(extractValue(obj, "canShoot"), stats.canShoot);
+                        if (stats.canShoot) {
+                            std::string cooldownVal = extractValue(obj, "shootCooldown");
+                            if (!cooldownVal.empty()) stats.shootCooldown = parseFloat(cooldownVal);
+                            std::string projSpeedVal = extractValue(obj, "projectileSpeed");
+                            if (!projSpeedVal.empty()) stats.projectileSpeed = parseFloat(projSpeedVal);
+                            std::string projRangeVal = extractValue(obj, "projectileRange");
+                            if (!projRangeVal.empty()) stats.projectileRange = parseFloat(projRangeVal);
+                            std::string shootRangeVal = extractValue(obj, "shootRange");
+                            if (!shootRangeVal.empty()) stats.shootRange = parseFloat(shootRangeVal);
+                        }
+                        std::string colorRVal = extractValue(obj, "colorR");
+                        if (!colorRVal.empty()) stats.color.r = static_cast<sf::Uint8>(parseFloat(colorRVal));
+                        std::string colorGVal = extractValue(obj, "colorG");
+                        if (!colorGVal.empty()) stats.color.g = static_cast<sf::Uint8>(parseFloat(colorGVal));
+                        std::string colorBVal = extractValue(obj, "colorB");
+                        if (!colorBVal.empty()) stats.color.b = static_cast<sf::Uint8>(parseFloat(colorBVal));
+                        levelData->enemies.push_back(std::make_unique<FlyingEnemy>(x, y, patrolDistance, horizontalPatrol, stats));
+                    } else if (typeVal == "spike") {
+                        levelData->enemies.push_back(std::make_unique<Spike>(x, y));
+                    } else if (typeVal == "flameTrap") {
+                        EnemyStats stats = EnemyPresets::FlameHorizontal();
+                        std::string maxHpVal = extractValue(obj, "maxHP");
+                        if (!maxHpVal.empty()) stats.maxHP = static_cast<int>(parseFloat(maxHpVal));
+                        std::string sizeXVal = extractValue(obj, "sizeX");
+                        if (!sizeXVal.empty()) stats.sizeX = parseFloat(sizeXVal);
+                        std::string sizeYVal = extractValue(obj, "sizeY");
+                        if (!sizeYVal.empty()) stats.sizeY = parseFloat(sizeYVal);
+                        std::string damageVal = extractValue(obj, "damage");
+                        if (!damageVal.empty()) stats.damage = static_cast<int>(parseFloat(damageVal));
+                        std::string colorRVal = extractValue(obj, "colorR");
+                        if (!colorRVal.empty()) stats.color.r = static_cast<sf::Uint8>(parseFloat(colorRVal));
+                        std::string colorGVal = extractValue(obj, "colorG");
+                        if (!colorGVal.empty()) stats.color.g = static_cast<sf::Uint8>(parseFloat(colorGVal));
+                        std::string colorBVal = extractValue(obj, "colorB");
+                        if (!colorBVal.empty()) stats.color.b = static_cast<sf::Uint8>(parseFloat(colorBVal));
+                        auto flame = std::make_unique<FlameTrap>(x, y, stats);
+                        flame->setDirection(parseDirection(extractValue(obj, "direction")));
+                        std::string activeVal = extractValue(obj, "activeDuration");
+                        if (!activeVal.empty()) flame->setActiveDuration(parseFloat(activeVal));
+                        std::string inactiveVal = extractValue(obj, "inactiveDuration");
+                        if (!inactiveVal.empty()) flame->setInactiveDuration(parseFloat(inactiveVal));
+                        std::string intervalVal = extractValue(obj, "shotInterval");
+                        if (!intervalVal.empty()) flame->setShotInterval(parseFloat(intervalVal));
+                        std::string projSpeedVal = extractValue(obj, "projectileSpeed");
+                        if (!projSpeedVal.empty()) flame->setProjectileSpeed(parseFloat(projSpeedVal));
+                        std::string projRangeVal = extractValue(obj, "projectileRange");
+                        if (!projRangeVal.empty()) flame->setProjectileRange(parseFloat(projRangeVal));
+                        levelData->enemies.push_back(std::move(flame));
+                    } else if (typeVal == "rotatingTrap") {
+                        EnemyStats stats = EnemyPresets::RotatingSlow();
+                        std::string maxHpVal = extractValue(obj, "maxHP");
+                        if (!maxHpVal.empty()) stats.maxHP = static_cast<int>(parseFloat(maxHpVal));
+                        std::string sizeXVal = extractValue(obj, "sizeX");
+                        if (!sizeXVal.empty()) stats.sizeX = parseFloat(sizeXVal);
+                        std::string sizeYVal = extractValue(obj, "sizeY");
+                        if (!sizeYVal.empty()) stats.sizeY = parseFloat(sizeYVal);
+                        std::string damageVal = extractValue(obj, "damage");
+                        if (!damageVal.empty()) stats.damage = static_cast<int>(parseFloat(damageVal));
+                        std::string colorRVal = extractValue(obj, "colorR");
+                        if (!colorRVal.empty()) stats.color.r = static_cast<sf::Uint8>(parseFloat(colorRVal));
+                        std::string colorGVal = extractValue(obj, "colorG");
+                        if (!colorGVal.empty()) stats.color.g = static_cast<sf::Uint8>(parseFloat(colorGVal));
+                        std::string colorBVal = extractValue(obj, "colorB");
+                        if (!colorBVal.empty()) stats.color.b = static_cast<sf::Uint8>(parseFloat(colorBVal));
+                        auto trap = std::make_unique<RotatingTrap>(x, y, stats);
+                        std::string rotSpeedVal = extractValue(obj, "rotationSpeed");
+                        if (!rotSpeedVal.empty()) trap->setRotationSpeed(parseFloat(rotSpeedVal));
+                        std::string armLenVal = extractValue(obj, "armLength");
+                        if (!armLenVal.empty()) trap->setArmLength(parseFloat(armLenVal));
+                        std::string armThickVal = extractValue(obj, "armThickness");
+                        if (!armThickVal.empty()) trap->setArmThickness(parseFloat(armThickVal));
+                        levelData->enemies.push_back(std::move(trap));
+                    }
                 }
+            } else {
+                std::cout << "Warning: Could not find end of enemies array\n";
             }
+        } else {
+            std::cout << "Warning: Could not find start of enemies array\n";
         }
     }
 

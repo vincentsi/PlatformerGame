@@ -137,5 +137,43 @@ namespace EnemyPresets {
         stats.shootRange = 350.0f;
         return stats;
     }
+    
+    inline EnemyStats FlameHorizontal() {
+        EnemyStats stats;
+        stats.maxHP = 999;
+        stats.sizeX = 48.0f;
+        stats.sizeY = 32.0f;
+        stats.speed = 0.0f;
+        stats.damage = 1;
+        stats.color = sf::Color(255, 140, 40);
+        stats.canShoot = false;
+        return stats;
+    }
+
+    inline EnemyStats FlameVertical() {
+        EnemyStats stats = FlameHorizontal();
+        stats.sizeX = 32.0f;
+        stats.sizeY = 48.0f;
+        return stats;
+    }
+
+    inline EnemyStats RotatingSlow() {
+        EnemyStats stats;
+        stats.maxHP = 999;
+        stats.sizeX = 120.0f;
+        stats.sizeY = 18.0f;
+        stats.speed = 0.0f;
+        stats.damage = 1;
+        stats.color = sf::Color(180, 30, 30);
+        stats.canShoot = false;
+        return stats;
+    }
+
+    inline EnemyStats RotatingFast() {
+        EnemyStats stats = RotatingSlow();
+        stats.sizeX = 140.0f;
+        stats.sizeY = 20.0f;
+        return stats;
+    }
 }
 

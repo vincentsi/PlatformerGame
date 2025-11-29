@@ -16,8 +16,10 @@ set(SOURCES
     src/entities/Player.cpp
     src/entities/Enemy.cpp
     src/entities/PatrolEnemy.cpp
-    src/entities/Spike.cpp
     src/entities/FlyingEnemy.cpp
+    src/entities/Spike.cpp
+    src/entities/FlameTrap.cpp
+    src/entities/RotatingTrap.cpp
     src/entities/KineticWaveProjectile.cpp
     src/entities/EnemyProjectile.cpp
     src/world/Platform.cpp

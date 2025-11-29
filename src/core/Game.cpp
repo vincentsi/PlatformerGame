@@ -10,6 +10,8 @@
 #include "entities/PatrolEnemy.h"
 #include "entities/Spike.h"
 #include "entities/FlyingEnemy.h"
+#include "entities/FlameTrap.h"
+#include "entities/RotatingTrap.h"
 #include "entities/KineticWaveProjectile.h"
 #include "entities/EnemyProjectile.h"
 #include "world/Platform.h"
@@ -812,7 +814,9 @@ void Game::update(float dt) {
             }
             
             // Don't attack stationary enemies (spikes/traps)
-            if (enemy->getType() == EnemyType::Stationary) {
+            if (enemy->getType() == EnemyType::Stationary ||
+                enemy->getType() == EnemyType::FlameTrap ||
+                enemy->getType() == EnemyType::RotatingTrap) {
                 continue;
             }
             
@@ -864,6 +868,10 @@ void Game::update(float dt) {
         // Don't update enemy movement in editor mode
         if (gameState != GameState::Editor) {
             enemy->update(dt);
+
+            if (auto* flameTrap = dynamic_cast<FlameTrap*>(enemy.get())) {
+                flameTrap->updateFlame(dt, enemyProjectiles);
+            }
             
             // Handle enemy shooting
             if (enemy->getStats().canShoot && enemy->canShoot()) {
@@ -916,7 +924,9 @@ void Game::update(float dt) {
             sf::FloatRect enemyBounds = enemy->getBounds();
 
             // Spikes (Stationary enemies) cannot be stomped - they always deal damage
-            if (enemy->getType() == EnemyType::Stationary) {
+            if (enemy->getType() == EnemyType::Stationary ||
+                enemy->getType() == EnemyType::FlameTrap ||
+                enemy->getType() == EnemyType::RotatingTrap) {
                 // Always take damage from spikes (no stomping)
                 if (!player->isInvincible()) {
                     player->takeDamage(1);
@@ -1310,6 +1320,9 @@ void Game::loadLevel(const std::string& levelPath) {
         for (auto& enemy : enemies) {
             if (enemy) {
                 enemy->revive();
+                if (auto* flame = dynamic_cast<FlameTrap*>(enemy.get())) {
+                    flame->resetCycle();
+                }
             }
         }
 
@@ -1623,6 +1636,9 @@ void Game::setState(GameState newState) {
             for (auto& enemy : enemies) {
                 if (enemy) {
                     enemy->revive();
+                    if (auto* flame = dynamic_cast<FlameTrap*>(enemy.get())) {
+                        flame->resetCycle();
+                    }
                 }
             }
         }

@@ -37,7 +37,9 @@
   ],
 
   "enemies": [
-    { "x": 891, "y": 378, "type": "flying", "patrolDistance": 759, "horizontalPatrol": true, "maxHP": 1, "sizeX": 30, "sizeY": 30, "speed": 100, "damage": 1, "canShoot": false, "colorR": 255, "colorG": 0, "colorB": 0 }
+    { "x": 891, "y": 378, "type": "flying", "patrolDistance": 759, "horizontalPatrol": true, "maxHP": 1, "sizeX": 30, "sizeY": 30, "speed": 100, "damage": 1, "canShoot": false, "colorR": 255, "colorG": 0, "colorB": 0 },
+    { "x": 502, "y": 407, "type": "flameTrap", "maxHP": 999, "sizeX": 48, "sizeY": 32, "damage": 1, "colorR": 255, "colorG": 140, "colorB": 40, "direction": "right", "activeDuration": 1.5, "inactiveDuration": 1.5, "shotInterval": 0.2, "projectileSpeed": 350, "projectileRange": 450 },
+    { "x": 716, "y": 365, "type": "rotatingTrap", "maxHP": 999, "sizeX": 110, "sizeY": 18, "damage": 1, "colorR": 180, "colorG": 30, "colorB": 30, "rotationSpeed": 100, "armLength": 110, "armThickness": 18 }
   ],
 
   "goalZone": { "x": 0, "y": 0, "width": 0, "height": 0 }
